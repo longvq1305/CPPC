@@ -1,10 +1,12 @@
 using PolygonAiBuilder.Infrastructure;
+using PolygonAiBuilder.Web;
 using PolygonAiBuilder.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+builder.Services.AddSingleton<StartupBrowserLauncher>();
 
 var configuredRoot = builder.Configuration["Storage:RootPath"];
 var runtimeRoot = string.IsNullOrWhiteSpace(configuredRoot)
@@ -28,6 +30,7 @@ app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
 await app.Services.MigratePolygonAiBuilderDatabaseAsync();
+app.Services.GetRequiredService<StartupBrowserLauncher>().Register(app.Lifetime);
 app.Run();
 
 public partial class Program;

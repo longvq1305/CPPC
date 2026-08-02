@@ -19,7 +19,10 @@ public sealed class FoundationHostTests
         {
             using var baseFactory = new WebApplicationFactory<Program>();
             using var factory = baseFactory.WithWebHostBuilder(builder =>
-                builder.UseSetting("Storage:RootPath", rootPath));
+            {
+                builder.UseSetting("Storage:RootPath", rootPath);
+                builder.UseSetting("Browser:OpenOnStartup", "false");
+            });
             using var client = factory.CreateClient();
 
             var health = await client.GetStringAsync("/health", CancellationToken.None);

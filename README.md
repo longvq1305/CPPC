@@ -28,9 +28,11 @@ dotnet restore
 dotnet run --project src/PolygonAiBuilder.Web
 ```
 
-Open `http://127.0.0.1:5187`. The server is intentionally bound to loopback only.
-Runtime files are created under `data/`, `projects/`, `logs/`, and `secrets/`; these
-directories are excluded from Git.
+After the loopback health check succeeds, the application opens
+`http://127.0.0.1:5187` in the default browser. The server is intentionally bound
+to loopback only.
+Runtime files are created under `data/`, `projects/`, and `logs/`; these directories
+are excluded from Git.
 
 ## Build and test
 

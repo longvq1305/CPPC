@@ -23,3 +23,7 @@
 - A browser smoke test exposed submit-time stale input in the create-project form.
   The field now binds on `oninput`; create, navigate, and delete were re-run against
   the real Interactive Server application successfully.
+- The original launch profile advertised port 5016 while Kestrel listened on 5187,
+  and terminal `dotnet run` could not be trusted to apply IDE browser-launch behavior.
+  Startup now checks the configured loopback health endpoint and opens the default
+  browser itself; automated hosts explicitly disable this side effect.
