@@ -200,6 +200,7 @@ public sealed class PolygonSyncService(
                     "problem.renderStatements", Fingerprint(statement.CurrentVersion),
                     async ct =>
                     {
+                        await EnsureVietnameseStatementTemplateAsync(problemId, statement.Content, ct);
                         var render = await polygonClient.RenderStatementsAsync(problemId, true, ct);
                         if (!render.Succeeded)
                         {
@@ -280,6 +281,32 @@ public sealed class PolygonSyncService(
         finally
         {
             gate.Release();
+        }
+    }
+
+    private async Task EnsureVietnameseStatementTemplateAsync(
+        long problemId,
+        StatementContent content,
+        CancellationToken cancellationToken)
+    {
+        if (!PolygonStatementTemplate.NeedsVietnameseFontEncoding(content))
+        {
+            return;
+        }
+
+        const string templateName = "statements.ftl";
+        var currentTemplate = await polygonClient.ViewResourceFileAsync(
+            problemId,
+            templateName,
+            cancellationToken);
+        var updatedTemplate = PolygonStatementTemplate.EnableVietnameseFontEncoding(currentTemplate);
+        if (!string.Equals(currentTemplate, updatedTemplate, StringComparison.Ordinal))
+        {
+            await polygonClient.SaveResourceFileAsync(
+                problemId,
+                templateName,
+                updatedTemplate,
+                cancellationToken);
         }
     }
 

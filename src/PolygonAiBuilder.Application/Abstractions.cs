@@ -400,6 +400,15 @@ public interface IPolygonClient
         string source,
         string sourceType,
         CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<string> ViewResourceFileAsync(
+        long problemId,
+        string name,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task SaveResourceFileAsync(
+        long problemId,
+        string name,
+        string content,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
     Task SetCheckerAsync(long problemId, string checkerName, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task SaveScriptAsync(long problemId, string testset, string source, CancellationToken cancellationToken = default) =>

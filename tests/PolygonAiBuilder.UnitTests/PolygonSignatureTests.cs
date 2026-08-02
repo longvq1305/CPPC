@@ -5,7 +5,7 @@ namespace PolygonAiBuilder.UnitTests;
 public sealed class PolygonSignatureTests
 {
     [Fact]
-    public void Create_SortsEncodesAndHashesAllSignedParameters()
+    public void Create_SortsFormEncodesAndHashesRawSignedParameters()
     {
         var signed = PolygonSignature.Create(
             "problems.list",
@@ -15,9 +15,9 @@ public sealed class PolygonSignatureTests
             1_722_600_000,
             "abc123");
 
-        Assert.Equal("apiKey=test-key&name=a+b&time=1722600000", signed.CanonicalQuery);
+        Assert.Equal("apiKey=test-key&name=a+b&time=1722600000", signed.FormEncodedQuery);
         Assert.Equal(
-            "abc1238af0cad3610c7bbabbda12d01afed6185eea4a63ed3e0373e60e26c88e1f54154621d57f977742e4561c9a73f33a66e9d9afc0d1a108007f7489d827e1997dc5",
+            "abc123b787dbb84fa4f48d9f0c7810041387652746ae07287b0fdeae52c65f2079d63bec344bff3bf06610f2adfbc0d29b337200ac2923d290693522214edd3a676664",
             signed.ApiSignature);
     }
 

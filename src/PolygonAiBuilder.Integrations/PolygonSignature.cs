@@ -27,14 +27,17 @@ public static class PolygonSignature
             .OrderBy(parameter => parameter.Key, StringComparer.Ordinal)
             .ThenBy(parameter => parameter.Value, StringComparer.Ordinal)
             .ToArray();
-        var canonicalQuery = string.Join(
+        var signatureParameters = string.Join(
+            "&",
+            signedParameters.Select(parameter => $"{parameter.Key}={parameter.Value}"));
+        var formEncodedQuery = string.Join(
             "&",
             signedParameters.Select(parameter => $"{Encode(parameter.Key)}={Encode(parameter.Value)}"));
-        var signatureSource = $"{randomPrefix}/{methodName}?{canonicalQuery}#{apiSecret}";
+        var signatureSource = $"{randomPrefix}/{methodName}?{signatureParameters}#{apiSecret}";
         var signatureHash = Convert.ToHexStringLower(
             SHA512.HashData(Encoding.UTF8.GetBytes(signatureSource)));
 
-        return new(canonicalQuery, randomPrefix + signatureHash);
+        return new(formEncodedQuery, randomPrefix + signatureHash);
     }
 
     public static string CreateRandomPrefix() =>
@@ -44,5 +47,5 @@ public static class PolygonSignature
 }
 
 public sealed record SignedPolygonRequest(
-    string CanonicalQuery,
+    string FormEncodedQuery,
     string ApiSignature);

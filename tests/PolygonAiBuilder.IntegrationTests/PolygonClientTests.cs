@@ -49,6 +49,27 @@ public sealed class PolygonClientTests
     }
 
     [Fact]
+    public async Task HttpFailure_UsesRedactedPolygonComment()
+    {
+        var handler = new DelegateHandler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                "{\"status\":\"FAILED\",\"comment\":\"bad test-api-key / test-api-secret\"}",
+                Encoding.UTF8,
+                "application/json"),
+        }));
+        var client = CreateClient(handler);
+
+        var exception = await Assert.ThrowsAsync<ExternalServiceException>(
+            () => client.ListProblemsAsync("sample"));
+
+        Assert.Equal("http_400", exception.Code);
+        Assert.DoesNotContain("test-api-key", exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-api-secret", exception.Message, StringComparison.Ordinal);
+        Assert.Equal("bad [REDACTED] / [REDACTED]", exception.Message);
+    }
+
+    [Fact]
     public async Task WriteMethods_UseCurrentOfficialMethodNamesAndCpp17Parameters()
     {
         var requests = new List<(string Method, Dictionary<string, string> Form)>();
@@ -58,7 +79,7 @@ public sealed class PolygonClientTests
             requests.Add((request.RequestUri!.Segments.Last(), ParseForm(body)));
             return request.RequestUri.Segments.Last() == "problem.create"
                 ? JsonResponse("""{"status":"OK","result":{"id":77,"name":"new-problem","owner":"owner","deleted":false}}""")
-                : JsonResponse("""{"status":"OK","result":{}}""");
+                : JsonResponse("""{"status":"OK"}""");
         });
         var client = CreateClient(handler);
 
@@ -67,6 +88,7 @@ public sealed class PolygonClientTests
         await client.SaveStatementAsync(problem.Id, new("english", "Title", "Legend", "Input", "Output", "Note"));
         await client.SaveSolutionAsync(problem.Id, "int main(){}\n");
         await client.SaveSourceFileAsync(problem.Id, "gen.cpp", "int main(){}\n", "cpp.g++17");
+        await client.SaveResourceFileAsync(problem.Id, "statements.ftl", "template");
         await client.SetCheckerAsync(problem.Id, "ncmp.cpp");
         await client.SaveScriptAsync(problem.Id, "tests", "gen 1 > $");
         await client.EnablePointsAsync(problem.Id, true);
@@ -74,13 +96,54 @@ public sealed class PolygonClientTests
         Assert.Equal(77, problem.Id);
         Assert.Equal([
             "problem.create", "problem.updateInfo", "problem.saveStatement", "problem.saveSolution",
-            "problem.saveFile", "problem.setChecker", "problem.saveScript", "problem.enablePoints"
+            "problem.saveFile", "problem.saveFile", "problem.setChecker", "problem.saveScript", "problem.enablePoints"
         ], requests.Select(item => item.Method));
         Assert.Equal("cpp.g++17", requests.Single(item => item.Method == "problem.saveSolution").Form["sourceType"]);
         Assert.Equal("MA", requests.Single(item => item.Method == "problem.saveSolution").Form["tag"]);
-        Assert.Equal("gen.cpp", requests.Single(item => item.Method == "problem.saveFile").Form["name"]);
+        Assert.Equal("gen.cpp", requests.Single(item => item.Method == "problem.saveFile"
+            && item.Form["type"] == "source").Form["name"]);
+        Assert.Contains(requests, item => item.Method == "problem.saveFile"
+            && item.Form["type"] == "resource"
+            && item.Form["name"] == "statements.ftl"
+            && item.Form["file"] == "template");
         Assert.Equal("false", requests.Single(item => item.Method == "problem.updateInfo").Form["interactive"]);
         Assert.DoesNotContain(requests, item => item.Method.Contains("validator", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task ViewResourceFile_UsesOfficialEndpointAndReturnsPlainText()
+    {
+        Dictionary<string, string>? form = null;
+        var handler = new DelegateHandler(async request =>
+        {
+            form = ParseForm(await request.Content!.ReadAsStringAsync());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("\\usepackage [T2A] {fontenc}", Encoding.UTF8, "text/plain"),
+            };
+        });
+        var client = CreateClient(handler);
+
+        var content = await client.ViewResourceFileAsync(77, "statements.ftl");
+
+        Assert.Equal("\\usepackage [T2A] {fontenc}", content);
+        Assert.Equal("resource", form!["type"]);
+        Assert.Equal("statements.ftl", form["name"]);
+        Assert.Equal("77", form["problemId"]);
+        AssertSignature(form, "problem.viewFile", "test-api-secret");
+    }
+
+    [Fact]
+    public async Task DataReturningMethod_StillRequiresResult()
+    {
+        var handler = new DelegateHandler(_ => Task.FromResult(JsonResponse("""{"status":"OK"}""")));
+        var client = CreateClient(handler);
+
+        var exception = await Assert.ThrowsAsync<ExternalServiceException>(
+            () => client.ListProblemsAsync("sample"));
+
+        Assert.Equal("invalid_response", exception.Code);
+        Assert.Contains("cần dữ liệu", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -90,7 +153,7 @@ public sealed class PolygonClientTests
         var handler = new DelegateHandler(async request =>
         {
             forms.Add(ParseForm(await request.Content!.ReadAsStringAsync()));
-            return JsonResponse("""{"status":"OK","result":{}}""");
+            return JsonResponse("""{"status":"OK"}""");
         });
         var client = CreateClient(handler);
 
@@ -159,14 +222,14 @@ public sealed class PolygonClientTests
     {
         var apiSignature = values["apiSig"];
         var prefix = apiSignature[..6];
-        var canonical = string.Join(
+        var signatureParameters = string.Join(
             "&",
             values
                 .Where(pair => pair.Key != "apiSig")
                 .OrderBy(pair => pair.Key, StringComparer.Ordinal)
                 .ThenBy(pair => pair.Value, StringComparer.Ordinal)
-                .Select(pair => $"{PolygonSignature.Encode(pair.Key)}={PolygonSignature.Encode(pair.Value)}"));
-        var source = $"{prefix}/{methodName}?{canonical}#{secret}";
+                .Select(pair => $"{pair.Key}={pair.Value}"));
+        var source = $"{prefix}/{methodName}?{signatureParameters}#{secret}";
         var expected = prefix + Convert.ToHexStringLower(
             SHA512.HashData(Encoding.UTF8.GetBytes(source)));
         Assert.Equal(expected, apiSignature);
