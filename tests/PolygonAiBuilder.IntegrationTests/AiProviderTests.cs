@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using PolygonAiBuilder.Application;
 using PolygonAiBuilder.Domain;
 using PolygonAiBuilder.Integrations;
@@ -102,6 +103,72 @@ public sealed class AiProviderTests
         Assert.Contains(events, item => item.Kind == AiStreamEventKind.Completed && item.ProviderResponseId == "int_123");
         Assert.Contains("\"type\":\"user_input\"", handler.LastRequestBody, StringComparison.Ordinal);
         Assert.Contains("\"store\":false", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task OpenAi_AttachmentOnlyTurn_DoesNotSendEmptyInputText()
+    {
+        var handler = new RecordingHandler(_ => Sse("""
+            data: {"type":"response.completed","response":{"id":"resp_attachment"}}
+
+            data: [DONE]
+
+            """));
+        var provider = new OpenAiProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://api.openai.com/") },
+            new MemorySecretStore(new("test-openai", "", "", "")),
+            TimeProvider.System);
+        var attachment = new AiAttachmentContent(
+            Guid.NewGuid(),
+            "idea.png",
+            "image/png",
+            [1, 2, 3],
+            null);
+
+        await foreach (var _ in provider.StreamChatAsync(new(
+                           "gpt-test",
+                           "system",
+                           [new(MessageRole.User, "", [attachment])])))
+        {
+        }
+
+        using var document = JsonDocument.Parse(handler.LastRequestBody);
+        var input = Assert.Single(document.RootElement.GetProperty("input").EnumerateArray());
+        var part = Assert.Single(input.GetProperty("content").EnumerateArray());
+        Assert.Equal("input_image", part.GetProperty("type").GetString());
+        Assert.False(part.TryGetProperty("text", out _));
+    }
+
+    [Fact]
+    public async Task Gemini_AttachmentOnlyTurn_DoesNotSendEmptyTextPart()
+    {
+        var handler = new RecordingHandler(_ => Sse("""
+            data: {"event_type":"interaction.completed","interaction":{"id":"int_attachment"}}
+
+            """));
+        var provider = new GeminiProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://generativelanguage.googleapis.com/") },
+            new MemorySecretStore(new("", "test-gemini", "", "")),
+            TimeProvider.System);
+        var attachment = new AiAttachmentContent(
+            Guid.NewGuid(),
+            "idea.png",
+            "image/png",
+            [1, 2, 3],
+            null);
+
+        await foreach (var _ in provider.StreamChatAsync(new(
+                           "gemini-test",
+                           "system",
+                           [new(MessageRole.User, "", [attachment])])))
+        {
+        }
+
+        using var document = JsonDocument.Parse(handler.LastRequestBody);
+        var input = Assert.Single(document.RootElement.GetProperty("input").EnumerateArray());
+        var part = Assert.Single(input.GetProperty("content").EnumerateArray());
+        Assert.Equal("image", part.GetProperty("type").GetString());
+        Assert.False(part.TryGetProperty("text", out _));
     }
 
     [Fact]

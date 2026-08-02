@@ -148,9 +148,11 @@ public sealed class AiWorkspaceService(
                          .Where(message => message.Id != start.AssistantMessageId)
                          .Where(message => message.Role is MessageRole.User or MessageRole.Assistant)
                          .Where(message => message.Status is MessageStatus.Completed or MessageStatus.Cancelled
-                             || message.Id == start.UserMessageId))
+                             || message.Id == start.UserMessageId)
+                         .Where(message => !string.IsNullOrWhiteSpace(message.ContentMarkdown)
+                             || message.Attachments.Count > 0))
             {
-                var attachments = message.Id == start.UserMessageId
+                var attachments = message.Role == MessageRole.User && message.Attachments.Count > 0
                     ? await attachmentStore.LoadContentsAsync(
                         message.Attachments.Select(attachment => attachment.Id).ToArray(),
                         cancellationToken)

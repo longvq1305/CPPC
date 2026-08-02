@@ -160,7 +160,12 @@ public sealed class GeminiProvider(
         var input = new JsonArray();
         foreach (var turn in request.Turns)
         {
-            var content = new JsonArray { new JsonObject { ["type"] = "text", ["text"] = turn.Content } };
+            var content = new JsonArray();
+            if (!string.IsNullOrWhiteSpace(turn.Content))
+            {
+                content.Add(new JsonObject { ["type"] = "text", ["text"] = turn.Content });
+            }
+
             foreach (var attachment in turn.Attachments)
             {
                 if (attachment.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
@@ -191,11 +196,14 @@ public sealed class GeminiProvider(
                 }
             }
 
-            input.Add(new JsonObject
+            if (content.Count > 0)
             {
-                ["type"] = turn.Role == MessageRole.Assistant ? "model_output" : "user_input",
-                ["content"] = content,
-            });
+                input.Add(new JsonObject
+                {
+                    ["type"] = turn.Role == MessageRole.Assistant ? "model_output" : "user_input",
+                    ["content"] = content,
+                });
+            }
         }
 
         return new JsonObject

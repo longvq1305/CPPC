@@ -163,11 +163,21 @@ public sealed class OpenAiProvider(
             var role = turn.Role == MessageRole.Assistant ? "assistant" : "user";
             if (turn.Attachments.Count == 0)
             {
+                if (string.IsNullOrWhiteSpace(turn.Content))
+                {
+                    continue;
+                }
+
                 input.Add(new JsonObject { ["role"] = role, ["content"] = turn.Content });
                 continue;
             }
 
-            var content = new JsonArray { new JsonObject { ["type"] = "input_text", ["text"] = turn.Content } };
+            var content = new JsonArray();
+            if (!string.IsNullOrWhiteSpace(turn.Content))
+            {
+                content.Add(new JsonObject { ["type"] = "input_text", ["text"] = turn.Content });
+            }
+
             foreach (var attachment in turn.Attachments)
             {
                 if (attachment.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
@@ -197,7 +207,10 @@ public sealed class OpenAiProvider(
                 }
             }
 
-            input.Add(new JsonObject { ["role"] = role, ["content"] = content });
+            if (content.Count > 0)
+            {
+                input.Add(new JsonObject { ["role"] = role, ["content"] = content });
+            }
         }
 
         return new JsonObject
