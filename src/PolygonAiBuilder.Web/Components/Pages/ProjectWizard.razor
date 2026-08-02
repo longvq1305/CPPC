@@ -124,6 +124,14 @@ else
         {
             <AiWorkspace ProjectId="ProjectId" />
         }
+        else if (Step == 3)
+        {
+            <StatementEditor @ref="statementEditor" ProjectId="ProjectId" />
+            @if (!string.IsNullOrWhiteSpace(statementContinueMessage))
+            {
+                <div class="notice notice-error statement-continue-notice" role="alert">@statementContinueMessage</div>
+            }
+        }
         else
         {
             <div class="phase-placeholder">
@@ -160,9 +168,13 @@ else
     private string workflowNoticeClass = "notice-info";
     private bool isLoading = true;
     private bool isNavigating;
+    private StatementEditor? statementEditor;
+    private string? statementContinueMessage;
 
     protected override async Task OnParametersSetAsync()
     {
+        // Navigation reuses this routed component, so clear the transition flag for the new step.
+        isNavigating = false;
         if (Step is < 1 or > 5)
         {
             Navigation.NavigateTo($"/projects/{ProjectId}/step/1", replace: true);
@@ -201,7 +213,48 @@ else
     }
 
     private Task PreviousAsync() => NavigateToStepAsync(Step - 1);
-    private Task NextAsync() => Step == 1 ? CheckNameAndContinueAsync() : NavigateToStepAsync(Step + 1);
+    private Task NextAsync() => Step switch
+    {
+        1 => CheckNameAndContinueAsync(),
+        3 => ValidateStatementAndContinueAsync(),
+        _ => NavigateToStepAsync(Step + 1),
+    };
+
+    private async Task ValidateStatementAndContinueAsync()
+    {
+        if (statementEditor is null)
+        {
+            return;
+        }
+
+        isNavigating = true;
+        try
+        {
+            var result = await statementEditor.SaveNowAsync();
+            if (!result.CanContinue)
+            {
+                var missing = new[]
+                {
+                    ("Title", result.Statement?.Content.Title),
+                    ("Legend", result.Statement?.Content.Legend),
+                    ("Input", result.Statement?.Content.Input),
+                    ("Output", result.Statement?.Content.Output),
+                }.Where(item => string.IsNullOrWhiteSpace(item.Item2)).Select(item => item.Item1).ToArray();
+                statementContinueMessage = missing.Length > 0
+                    ? $"Chưa thể tiếp tục: các trường bắt buộc còn trống: {string.Join(", ", missing)}."
+                    : "Chưa thể tiếp tục: hãy sửa các lỗi LaTeX màu đỏ.";
+                return;
+            }
+
+            statementContinueMessage = null;
+            await ProjectService.SetCurrentScreenAsync(ProjectId, 4);
+            Navigation.NavigateTo($"/projects/{ProjectId}/step/4");
+        }
+        finally
+        {
+            isNavigating = false;
+        }
+    }
 
     private async Task NavigateToStepAsync(int target)
     {

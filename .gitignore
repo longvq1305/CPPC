@@ -4,6 +4,7 @@
 .vs/
 .vscode/
 TestResults/
+node_modules/
 artifacts/
 dist/
 playwright-report/

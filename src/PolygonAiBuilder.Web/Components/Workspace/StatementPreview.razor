@@ -1,0 +1,144 @@
+@using System.Text.Encodings.Web
+@using System.Text.RegularExpressions
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+
+<article @ref="previewElement" @key="Content" class="polygon-statement-preview">
+    @if (string.IsNullOrWhiteSpace(Content.Title)
+         && string.IsNullOrWhiteSpace(Content.Legend)
+         && string.IsNullOrWhiteSpace(Content.Input)
+         && string.IsNullOrWhiteSpace(Content.Output)
+         && string.IsNullOrWhiteSpace(Content.Note))
+    {
+        <div class="empty-statement-preview">
+            <span>¶</span>
+            <h4>Chưa có statement</h4>
+            <p>Trao đổi yêu cầu trong AI Workspace hoặc nhập trực tiếp ở bước Statement.</p>
+        </div>
+    }
+    else
+    {
+        <h1>@Content.Title</h1>
+        <section>
+            <h2>Problem statement</h2>
+            <div class="statement-copy">@Format(Content.Legend)</div>
+        </section>
+        <section>
+            <h2>Input</h2>
+            <div class="statement-copy">@Format(Content.Input)</div>
+        </section>
+        <section>
+            <h2>Output</h2>
+            <div class="statement-copy">@Format(Content.Output)</div>
+        </section>
+        @if (!string.IsNullOrWhiteSpace(Content.Note))
+        {
+            <section>
+                <h2>Note</h2>
+                <div class="statement-copy">@Format(Content.Note)</div>
+            </section>
+        }
+    }
+</article>
+
+@if (Issues.Count > 0)
+{
+    <div class="latex-issues" aria-label="Kết quả kiểm tra LaTeX">
+        @foreach (var issue in Issues)
+        {
+            <div class="latex-issue @issue.Severity.ToString().ToLowerInvariant()">
+                <strong>@issue.Field</strong>: @issue.Message
+            </div>
+        }
+    </div>
+}
+
+<p class="preview-disclaimer">Preview gần đúng bằng MathJax; bản render trên Polygon là kết quả cuối cùng có thẩm quyền.</p>
+
+@code {
+    [Parameter] public StatementContent Content { get; set; } = StatementContent.Empty;
+    [Parameter] public IReadOnlyList<LatexIssue> Issues { get; set; } = [];
+
+    private ElementReference previewElement;
+    private IJSObjectReference? module;
+    private static readonly Regex InlineCommandPattern = new(
+        @"\\(textbf|textit|texttt|emph)\{([^{}]*)\}",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+    private static readonly Regex TabularPattern = new(
+        @"\\begin\{tabular\}\{([^{}]*)\}(.*?)\\end\{tabular\}",
+        RegexOptions.Singleline | RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        module ??= await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/statementInterop.js");
+        await module.InvokeVoidAsync("typeset", previewElement);
+    }
+
+    private static MarkupString Format(string source)
+    {
+        var html = HtmlEncoder.Default.Encode(source);
+        html = InlineCommandPattern.Replace(html, match => match.Groups[1].Value switch
+        {
+            "textbf" => $"<strong>{match.Groups[2].Value}</strong>",
+            "textit" or "emph" => $"<em>{match.Groups[2].Value}</em>",
+            _ => $"<code>{match.Groups[2].Value}</code>",
+        });
+        html = RenderLists(html, "itemize", "ul");
+        html = RenderLists(html, "enumerate", "ol");
+        html = TabularPattern.Replace(html, RenderTable);
+        html = html.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Replace("\n", "<br />", StringComparison.Ordinal);
+        return new MarkupString(html);
+    }
+
+    private static string RenderLists(string html, string environment, string tag)
+    {
+        var start = $"\\begin{{{environment}}}";
+        var end = $"\\end{{{environment}}}";
+        while (true)
+        {
+            var startIndex = html.IndexOf(start, StringComparison.Ordinal);
+            if (startIndex < 0)
+            {
+                return html;
+            }
+
+            var endIndex = html.IndexOf(end, startIndex + start.Length, StringComparison.Ordinal);
+            if (endIndex < 0)
+            {
+                return html;
+            }
+
+            var body = html[(startIndex + start.Length)..endIndex];
+            var items = body.Split("\\item", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var replacement = $"<{tag}>" + string.Concat(items.Select(item => $"<li>{item}</li>")) + $"</{tag}>";
+            html = string.Concat(html.AsSpan(0, startIndex), replacement, html.AsSpan(endIndex + end.Length));
+        }
+    }
+
+    private static string RenderTable(Match match)
+    {
+        var rows = Regex.Split(match.Groups[2].Value.Trim(), @"\\\\")
+            .Where(row => !string.IsNullOrWhiteSpace(row))
+            .Select(row => "<tr>" + string.Concat(row.Split('&').Select(cell => $"<td>{cell.Trim()}</td>")) + "</tr>");
+        return "<div class=\"statement-table-wrap\"><table>" + string.Concat(rows) + "</table></div>";
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await module.DisposeAsync();
+        }
+        catch (JSDisconnectedException)
+        {
+            // The circuit has already ended.
+        }
+    }
+}

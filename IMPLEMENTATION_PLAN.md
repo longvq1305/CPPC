@@ -105,7 +105,7 @@ through `IDbContextFactory`.
    - Provider abstraction, real OpenAI Responses and Gemini Interactions clients,
      model discovery/cache, SSE streaming, normalized persistent conversation,
      attachment validation/storage, provider switching confirmation.
-4. **Statement workflow**
+4. **Statement workflow — complete (2026-08-02)**
    - `update_statement` structured tool, defensive merge, immutable versions,
      diff/undo/restore, five-field editor, Monaco and MathJax preview, LaTeX lint.
 5. **Code and local toolchain**
@@ -143,6 +143,17 @@ conversation. OpenAI Responses reached the authenticated API but the account
 returned `insufficient_quota`; the UI persisted the response as `Failed` without
 losing the user message. OpenAI streaming behavior remains covered by mock SSE tests
 and is not represented as a successful live generation.
+
+Phase 4 verification: the five-field editor autosaved through local Monaco, MathJax
+rendered inline formulas and supported text markup, immutable versions were visible
+and restorable, and an empty statement was blocked from advancing to Code with an
+actionable field list. A credentialed Gemini `gemini-3.6-flash` structured request
+updated exactly Legend/Input/Output, displayed a three-field diff, and Undo restored
+the prior content as a new version. One separate streamed Gemini request failed with
+a network error; the honest failed record was confined to a temporary project that
+was deleted. That run exposed and fixed a cancellation/final-status race with a unit
+regression test. Both temporary acceptance projects were removed, no Polygon problem
+was created, and the user's existing project was returned to its original screen.
 
 Each phase ends with formatting, a Release build, relevant tests, a plan status
 update, and a separate commit. Full Release build and the complete test suite are

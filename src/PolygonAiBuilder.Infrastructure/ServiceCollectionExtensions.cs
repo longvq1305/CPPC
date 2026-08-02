@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApplicationSettingsRepository, ApplicationSettingsRepository>();
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IModelCacheRepository, ModelCacheRepository>();
+        services.AddScoped<IStatementRepository, StatementRepository>();
         services.AddScoped<IAttachmentStore, AttachmentStore>();
         services.AddSingleton<ISecretStore, DpapiSecretStore>();
         services.AddScoped<IProjectService, ProjectService>();
@@ -37,6 +38,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISettingsService, SettingsService>();
         services.AddScoped<IModelCatalogService, ModelCatalogService>();
         services.AddScoped<IAiWorkspaceService, AiWorkspaceService>();
+        services.AddSingleton<ILatexValidator, LatexValidator>();
+        services.AddScoped<IStatementService, StatementService>();
         return services;
     }
 

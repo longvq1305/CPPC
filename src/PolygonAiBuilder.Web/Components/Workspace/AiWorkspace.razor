@@ -3,6 +3,8 @@
 @inject IModelCatalogService ModelCatalog
 @inject IAttachmentStore AttachmentStore
 @inject ISettingsService SettingsService
+@inject IStatementService StatementService
+@inject ILatexValidator LatexValidator
 @implements IDisposable
 
 <div class="ai-workspace" aria-label="AI Workspace">
@@ -12,13 +14,30 @@
                 <span class="eyebrow">Live preview</span>
                 <h3>Statement hiện tại</h3>
             </div>
-            <span class="status-pill neutral">English</span>
+            <div class="preview-heading-actions">
+                <span class="status-pill neutral">English</span>
+                <button class="btn btn-primary app-primary" @onclick="GenerateStatementAsync"
+                        disabled="@(isStreaming || isGeneratingStatement || string.IsNullOrWhiteSpace(selectedModel))">
+                    @(isGeneratingStatement ? "Đang cập nhật…" : "Cập nhật statement")
+                </button>
+            </div>
         </div>
-        <div class="empty-statement-preview">
-            <span>¶</span>
-            <h4>Chưa có statement</h4>
-            <p>Hãy mô tả ý tưởng, mức độ và constraints trong chat. AI sẽ cùng bạn phác thảo trước khi cập nhật năm trường statement.</p>
-        </div>
+        <StatementPreview Content="@(statement?.Content ?? StatementContent.Empty)" Issues="statementIssues" />
+        @if (statementDiff is { HasChanges: true })
+        {
+            <div class="workspace-diff-summary">
+                <strong>AI vừa thay đổi @statementDiff.Fields.Count(item => item.Changed) trường.</strong>
+                <button class="btn btn-ghost" @onclick="UndoStatementUpdateAsync"
+                        disabled="@(isGeneratingStatement || statementVersionBeforeAi is null)">Undo</button>
+                @foreach (var item in statementDiff.Fields.Where(item => item.Changed))
+                {
+                    <details>
+                        <summary>@item.Field</summary>
+                        <pre>@item.After</pre>
+                    </details>
+                }
+            </div>
+        }
     </section>
 
     <section class="chat-pane">
@@ -154,11 +173,16 @@
     private IReadOnlyList<AiModelInfo> models = [];
     private List<ConversationMessageInfo> messages = [];
     private List<AttachmentInfo> pendingAttachments = [];
+    private StatementSnapshot? statement;
+    private IReadOnlyList<LatexIssue> statementIssues = [];
+    private StatementDiff? statementDiff;
+    private int? statementVersionBeforeAi;
     private CancellationTokenSource? generationCancellation;
     private bool isLoading = true;
     private bool isStreaming;
     private bool isRefreshing;
     private bool isUploading;
+    private bool isGeneratingStatement;
     private bool noticeIsError;
     private string? notice;
 
@@ -186,6 +210,8 @@
             selectedModel = workspace.SelectedModel;
             messages = workspace.Messages.ToList();
             pendingAttachments = workspace.PendingAttachments.ToList();
+            statement = await StatementService.LoadAsync(ProjectId);
+            statementIssues = statement is null ? [] : LatexValidator.Validate(statement.Content);
             var settings = await SettingsService.LoadAsync();
             if (string.IsNullOrWhiteSpace(selectedModel))
             {
@@ -429,6 +455,65 @@
                 messages = workspace.Messages.ToList();
                 pendingAttachments = workspace.PendingAttachments.ToList();
             }
+        }
+    }
+
+    private async Task GenerateStatementAsync()
+    {
+        if (isGeneratingStatement || string.IsNullOrWhiteSpace(selectedModel))
+        {
+            return;
+        }
+
+        isGeneratingStatement = true;
+        notice = null;
+        try
+        {
+            await WorkspaceService.SetSelectionAsync(ProjectId, selectedProvider, selectedModel.Trim());
+            var before = statement ?? await StatementService.LoadAsync(ProjectId)
+                ?? throw new InvalidOperationException("Không tìm thấy statement của dự án.");
+            var result = await StatementService.GenerateFromConversationAsync(ProjectId);
+            notice = result.Message;
+            noticeIsError = !result.Succeeded;
+            statementIssues = result.Issues;
+            if (result.Succeeded && result.Statement is not null)
+            {
+                statement = result.Statement;
+                statementDiff = StatementService.Compare(before.Content, statement.Content);
+                statementVersionBeforeAi = before.CurrentVersion;
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            isGeneratingStatement = false;
+        }
+    }
+
+    private async Task UndoStatementUpdateAsync()
+    {
+        if (statementVersionBeforeAi is not { } version)
+        {
+            return;
+        }
+
+        isGeneratingStatement = true;
+        try
+        {
+            statement = await StatementService.RestoreAsync(ProjectId, version);
+            statementIssues = LatexValidator.Validate(statement.Content);
+            statementDiff = null;
+            statementVersionBeforeAi = null;
+            notice = $"Đã hoàn tác bản cập nhật AI và tạo version {statement.CurrentVersion}.";
+            noticeIsError = false;
+        }
+        finally
+        {
+            isGeneratingStatement = false;
         }
     }
 

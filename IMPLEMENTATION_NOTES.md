@@ -38,3 +38,11 @@
 - OpenAI credential/model discovery succeeded, but the live Responses request was
   rejected for insufficient quota. No successful OpenAI generation is claimed;
   mock SSE coverage verifies request construction and stream parsing.
+- Phase 4 vendors pinned Monaco 0.56.0 and MathJax 4.1.3 browser assets so the editor
+  and statement preview work without a CDN. User-authored statement text is encoded
+  before the small supported LaTeX formatting subset is rendered.
+- A live Gemini structured-output request updated only the allowed statement fields
+  and its diff/Undo flow was verified in the browser. A preceding streamed request
+  ended with a network error; cancellation could briefly reload the still-Streaming
+  row before the producer persisted its final status. The reader now awaits producer
+  cleanup before returning, with a cancellation regression test.

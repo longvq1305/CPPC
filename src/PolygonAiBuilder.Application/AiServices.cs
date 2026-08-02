@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using System.Runtime.CompilerServices;
 using PolygonAiBuilder.Domain;
 
 namespace PolygonAiBuilder.Application;
@@ -84,7 +85,7 @@ public sealed class AiWorkspaceService(
             SingleReader = true,
             SingleWriter = true,
         });
-        _ = ProduceAsync(
+        var producer = ProduceAsync(
             channel.Writer,
             projectId,
             content,
@@ -92,7 +93,27 @@ public sealed class AiWorkspaceService(
             model,
             attachmentIds,
             cancellationToken);
-        return channel.Reader.ReadAllAsync(cancellationToken);
+        return ReadProgressAsync(channel.Reader, producer, cancellationToken);
+    }
+
+    private static async IAsyncEnumerable<AiChatProgress> ReadProgressAsync(
+        ChannelReader<AiChatProgress> reader,
+        Task producer,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var item in reader.ReadAllAsync(cancellationToken))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            // Cancellation may stop the reader before the producer has persisted its final status.
+            // Wait for that bounded cleanup so a subsequent LoadAsync cannot observe stale Streaming state.
+            await producer;
+        }
     }
 
     private async Task ProduceAsync(

@@ -176,3 +176,74 @@ public sealed record AiChatProgress(
     string Delta,
     MessageStatus Status,
     string? ErrorMessage = null);
+
+public sealed record StatementContent(
+    string Title,
+    string Legend,
+    string Input,
+    string Output,
+    string Note)
+{
+    public static StatementContent Empty { get; } = new("", "", "", "", "");
+}
+
+public sealed record StatementVersionInfo(
+    int VersionNumber,
+    StatementContent Content,
+    ChangeSource ChangedBy,
+    string? Provider,
+    string? Model,
+    DateTimeOffset CreatedAt);
+
+public sealed record StatementSnapshot(
+    Guid ProjectId,
+    string Language,
+    int CurrentVersion,
+    StatementContent Content,
+    bool IsCodeStale,
+    DateTimeOffset UpdatedAt,
+    IReadOnlyList<StatementVersionInfo> History);
+
+public enum LatexIssueSeverity
+{
+    Warning,
+    Error,
+}
+
+public sealed record LatexIssue(
+    string Field,
+    LatexIssueSeverity Severity,
+    string Message);
+
+public sealed record StatementSaveResult(
+    bool Succeeded,
+    StatementSnapshot? Statement,
+    IReadOnlyList<LatexIssue> Issues,
+    string Message)
+{
+    public bool CanContinue => Statement is not null
+        && !string.IsNullOrWhiteSpace(Statement.Content.Title)
+        && !string.IsNullOrWhiteSpace(Statement.Content.Legend)
+        && !string.IsNullOrWhiteSpace(Statement.Content.Input)
+        && !string.IsNullOrWhiteSpace(Statement.Content.Output)
+        && Issues.All(issue => issue.Severity != LatexIssueSeverity.Error);
+}
+
+public sealed record StatementAiUpdate(
+    string? Title,
+    string? Legend,
+    string? Input,
+    string? Output,
+    string? Note,
+    string ChangeSummary);
+
+public sealed record StatementFieldDiff(
+    string Field,
+    string Before,
+    string After,
+    bool Changed);
+
+public sealed record StatementDiff(IReadOnlyList<StatementFieldDiff> Fields)
+{
+    public bool HasChanges => Fields.Any(item => item.Changed);
+}

@@ -1,0 +1,83 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JavaScript
+
+<div @ref="shell" id="@editorId" class="monaco-shell" style="height: @Height">
+    <textarea class="form-control monaco-fallback" value="@Value" @oninput="FallbackChangedAsync"
+              aria-label="@AriaLabel"></textarea>
+</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public string Height { get; set; } = "420px";
+    [Parameter] public string AriaLabel { get; set; } = "Statement source editor";
+
+    private readonly string editorId = $"monaco-{Guid.NewGuid():N}";
+    private ElementReference shell;
+    private DotNetObjectReference<MonacoEditor>? dotnetReference;
+    private IJSObjectReference? module;
+    private bool initialized;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/monacoInterop.js");
+            dotnetReference = DotNetObjectReference.Create(this);
+            await module.InvokeVoidAsync("create", shell, Value, dotnetReference);
+            initialized = true;
+            return;
+        }
+
+        if (initialized && module is not null)
+        {
+            await module.InvokeVoidAsync("update", shell, Value);
+        }
+    }
+
+    [JSInvokable]
+    public async Task EditorChanged(string value)
+    {
+        if (!string.Equals(Value, value, StringComparison.Ordinal))
+        {
+            await ValueChanged.InvokeAsync(value);
+        }
+    }
+
+    private Task FallbackChangedAsync(ChangeEventArgs args) =>
+        ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+
+    public async Task UndoAsync()
+    {
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("command", shell, "undo");
+        }
+    }
+
+    public async Task RedoAsync()
+    {
+        if (module is not null)
+        {
+            await module.InvokeVoidAsync("command", shell, "redo");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (module is not null)
+        {
+            try
+            {
+                await module.InvokeVoidAsync("dispose", shell);
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // The browser circuit is already gone; there is no JS resource left to release.
+            }
+        }
+
+        dotnetReference?.Dispose();
+    }
+}

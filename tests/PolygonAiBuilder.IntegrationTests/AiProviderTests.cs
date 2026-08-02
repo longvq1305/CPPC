@@ -104,6 +104,58 @@ public sealed class AiProviderTests
         Assert.Contains("\"store\":false", handler.LastRequestBody, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task OpenAi_GeneratesStrictStructuredOutput()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal("/v1/responses", request.RequestUri?.AbsolutePath);
+            return Json("""{"output":[{"type":"message","content":[{"type":"output_text","text":"{\"title\":\"Structured\"}"}]}]}""");
+        });
+        var provider = new OpenAiProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://api.openai.com/") },
+            new MemorySecretStore(new("test-openai", "", "", "")),
+            TimeProvider.System);
+
+        var result = await provider.GenerateStructuredAsync<StructuredTitle>(new(
+            "gpt-test",
+            "system",
+            "prompt",
+            "update_statement",
+            """{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}"""));
+
+        Assert.Equal("Structured", result.Title);
+        Assert.Contains("\"type\":\"json_schema\"", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("\"strict\":true", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("\"store\":false", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Gemini_GeneratesSchemaConstrainedStructuredOutput()
+    {
+        var handler = new RecordingHandler(request =>
+        {
+            Assert.Equal("/v1/interactions", request.RequestUri?.AbsolutePath);
+            return Json("""{"steps":[{"type":"model_output","content":[{"type":"text","text":"{\"title\":\"Structured\"}"}]}]}""");
+        });
+        var provider = new GeminiProvider(
+            new HttpClient(handler) { BaseAddress = new Uri("https://generativelanguage.googleapis.com/") },
+            new MemorySecretStore(new("", "test-gemini", "", "")),
+            TimeProvider.System);
+
+        var result = await provider.GenerateStructuredAsync<StructuredTitle>(new(
+            "gemini-test",
+            "system",
+            "prompt",
+            "update_statement",
+            """{"type":"object","properties":{"title":{"type":"string"}},"required":["title"],"additionalProperties":false}"""));
+
+        Assert.Equal("Structured", result.Title);
+        Assert.Contains("\"mime_type\":\"application/json\"", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("\"schema\":", handler.LastRequestBody, StringComparison.Ordinal);
+        Assert.Contains("\"store\":false", handler.LastRequestBody, StringComparison.Ordinal);
+    }
+
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK)
     {
         Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -137,4 +189,6 @@ public sealed class AiProviderTests
         public Task<SecretBundle> LoadAsync(CancellationToken cancellationToken) => Task.FromResult(secrets);
         public Task SaveAsync(SecretBundle value, CancellationToken cancellationToken) => Task.CompletedTask;
     }
+
+    private sealed record StructuredTitle(string? Title);
 }

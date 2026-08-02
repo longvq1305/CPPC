@@ -55,6 +55,23 @@ public interface IModelCacheRepository
         CancellationToken cancellationToken);
 }
 
+public interface IStatementRepository
+{
+    Task<StatementSnapshot?> GetAsync(Guid projectId, CancellationToken cancellationToken);
+    Task<StatementSnapshot> SaveAsync(
+        Guid projectId,
+        StatementContent content,
+        ChangeSource source,
+        string? provider,
+        string? model,
+        Guid? messageId,
+        CancellationToken cancellationToken);
+    Task<StatementSnapshot> RestoreAsync(
+        Guid projectId,
+        int versionNumber,
+        CancellationToken cancellationToken);
+}
+
 public interface IAttachmentStore
 {
     Task<AttachmentInfo> SaveAsync(
@@ -143,6 +160,35 @@ public interface IAiWorkspaceService
         string model,
         IReadOnlyCollection<Guid> attachmentIds,
         CancellationToken cancellationToken = default);
+}
+
+public interface ILatexValidator
+{
+    IReadOnlyList<LatexIssue> Validate(StatementContent content);
+}
+
+public interface IStatementService
+{
+    Task<StatementSnapshot?> LoadAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<StatementSaveResult> SaveUserEditAsync(
+        Guid projectId,
+        StatementContent content,
+        CancellationToken cancellationToken = default);
+    Task<StatementSaveResult> ApplyAiUpdateAsync(
+        Guid projectId,
+        StatementAiUpdate update,
+        string provider,
+        string model,
+        Guid? messageId = null,
+        CancellationToken cancellationToken = default);
+    Task<StatementSaveResult> GenerateFromConversationAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+    Task<StatementSnapshot> RestoreAsync(
+        Guid projectId,
+        int versionNumber,
+        CancellationToken cancellationToken = default);
+    StatementDiff Compare(StatementContent before, StatementContent after);
 }
 
 public interface IPolygonClient

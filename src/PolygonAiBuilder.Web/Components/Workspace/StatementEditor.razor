@@ -1,0 +1,337 @@
+@inject IStatementService StatementService
+@inject ILatexValidator LatexValidator
+@implements IDisposable
+
+<div class="statement-workspace">
+    <section class="statement-editor-pane">
+        <div class="statement-toolbar">
+            <div class="button-row compact-actions">
+                <button class="btn btn-ghost" @onclick="UndoEditorAsync" disabled="@isBusy">Undo</button>
+                <button class="btn btn-ghost" @onclick="RedoEditorAsync" disabled="@isBusy">Redo</button>
+                <button class="btn btn-ghost" @onclick="ToggleHistory">Lịch sử</button>
+                <button class="btn btn-ghost" @onclick="RestoreLatestAiAsync" disabled="@(isBusy || LatestAiVersion is null)">Restore AI</button>
+            </div>
+            <button class="btn btn-primary app-primary" @onclick="GenerateWithAiAsync" disabled="@isBusy">
+                @(isGenerating ? "AI đang cập nhật…" : "Cập nhật bằng AI")
+            </button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(notice))
+        {
+            <div class="notice @(noticeIsError ? "notice-error" : "notice-info")" role="status">@notice</div>
+        }
+
+        <div class="statement-field-tabs" role="tablist" aria-label="Statement fields">
+            @foreach (var field in Fields)
+            {
+                <button role="tab" aria-selected="@(activeField == field.Key)"
+                        class="@(activeField == field.Key ? "active" : "") @(HasFieldError(field.Key) ? "invalid" : "")"
+                        @onclick="() => SelectField(field.Key)">
+                    @field.Label
+                    @if (field.Required)
+                    {
+                        <span title="Bắt buộc">*</span>
+                    }
+                </button>
+            }
+        </div>
+
+        @if (isLoading)
+        {
+            <div class="loading-card"><span class="spinner-border spinner-border-sm"></span> Đang tải statement…</div>
+        }
+        else
+        {
+            <MonacoEditor @ref="editor" @key="activeField" Value="@ActiveValue" ValueChanged="ActiveValueChangedAsync"
+                          Height="430px" AriaLabel="@($"Nguồn LaTeX trường {ActiveFieldLabel}")" />
+            <div class="editor-status-row">
+                <span>Version @snapshot?.CurrentVersion · @(isSaved ? "Đã lưu local" : "Chưa lưu")</span>
+                <button class="btn btn-secondary" @onclick="SaveButtonAsync" disabled="@isBusy">Lưu ngay</button>
+            </div>
+        }
+
+        @if (showHistory && snapshot is not null)
+        {
+            <aside class="statement-history" aria-label="Lịch sử statement">
+                <div class="pane-heading">
+                    <h3>Lịch sử phiên bản</h3>
+                    <button class="icon-action" title="Đóng" @onclick="ToggleHistory">×</button>
+                </div>
+                @if (snapshot.History.Count == 0)
+                {
+                    <p>Chưa có phiên bản đã lưu.</p>
+                }
+                else
+                {
+                    @foreach (var version in snapshot.History)
+                    {
+                        <div class="history-entry">
+                            <div>
+                                <strong>v@(version.VersionNumber) · @version.ChangedBy</strong>
+                                <small>@version.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @FormatProvider(version)</small>
+                            </div>
+                            <button class="btn btn-ghost" @onclick="() => RestoreVersionAsync(version.VersionNumber)"
+                                    disabled="@(isBusy || version.VersionNumber == snapshot.CurrentVersion)">Khôi phục</button>
+                        </div>
+                    }
+                }
+            </aside>
+        }
+    </section>
+
+    <section class="statement-render-pane">
+        <div class="pane-heading">
+            <div>
+                <span class="eyebrow">Polygon preview</span>
+                <h3>Năm trường statement</h3>
+            </div>
+            <span class="status-pill @(HasErrors ? "danger" : "success")">@(HasErrors ? "Cần sửa" : "LaTeX cơ bản OK")</span>
+        </div>
+        <StatementPreview Content="content" Issues="issues" />
+    </section>
+</div>
+
+@if (lastDiff is { HasChanges: true })
+{
+    <section class="statement-diff-card" aria-label="Thay đổi statement gần nhất">
+        <div class="pane-heading">
+            <div>
+                <span class="eyebrow">AI change set</span>
+                <h3>@lastChangeSummary</h3>
+            </div>
+            <button class="btn btn-ghost" @onclick="UndoAiUpdateAsync" disabled="@(isBusy || versionBeforeLastAi is null)">Undo thay đổi AI</button>
+        </div>
+        @foreach (var field in lastDiff.Fields.Where(item => item.Changed))
+        {
+            <details>
+                <summary>@field.Field</summary>
+                <div class="diff-columns">
+                    <div><strong>Trước</strong><pre>@field.Before</pre></div>
+                    <div><strong>Sau</strong><pre>@field.After</pre></div>
+                </div>
+            </details>
+        }
+    </section>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ProjectId { get; set; }
+
+    private static readonly (string Key, string Label, bool Required)[] Fields =
+    [
+        ("Title", "Title", true),
+        ("Legend", "Legend", true),
+        ("Input", "Input", true),
+        ("Output", "Output", true),
+        ("Note", "Note", false),
+    ];
+
+    private StatementSnapshot? snapshot;
+    private StatementContent content = StatementContent.Empty;
+    private IReadOnlyList<LatexIssue> issues = [];
+    private StatementDiff? lastDiff;
+    private int? versionBeforeLastAi;
+    private string lastChangeSummary = "Các trường được AI cập nhật";
+    private string activeField = "Title";
+    private string? notice;
+    private bool noticeIsError;
+    private bool isLoading = true;
+    private bool isBusy;
+    private bool isGenerating;
+    private bool isSaved = true;
+    private bool showHistory;
+    private Guid loadedProjectId;
+    private CancellationTokenSource? autosaveCancellation;
+    private MonacoEditor? editor;
+
+    private StatementVersionInfo? LatestAiVersion => snapshot?.History.FirstOrDefault(version => version.ChangedBy == ChangeSource.AI);
+    private bool HasErrors => issues.Any(issue => issue.Severity == LatexIssueSeverity.Error);
+    private string ActiveFieldLabel => Fields.Single(item => item.Key == activeField).Label;
+    private string ActiveValue => activeField switch
+    {
+        "Title" => content.Title,
+        "Legend" => content.Legend,
+        "Input" => content.Input,
+        "Output" => content.Output,
+        _ => content.Note,
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedProjectId == ProjectId)
+        {
+            return;
+        }
+
+        loadedProjectId = ProjectId;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        snapshot = await StatementService.LoadAsync(ProjectId);
+        content = snapshot?.Content ?? StatementContent.Empty;
+        issues = LatexValidator.Validate(content);
+        isSaved = true;
+        isLoading = false;
+    }
+
+    private void SelectField(string field) => activeField = field;
+
+    private Task ActiveValueChangedAsync(string value)
+    {
+        content = activeField switch
+        {
+            "Title" => content with { Title = value },
+            "Legend" => content with { Legend = value },
+            "Input" => content with { Input = value },
+            "Output" => content with { Output = value },
+            _ => content with { Note = value },
+        };
+        issues = LatexValidator.Validate(content);
+        isSaved = false;
+        QueueAutosave();
+        return Task.CompletedTask;
+    }
+
+    private void QueueAutosave()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
+        autosaveCancellation = new CancellationTokenSource();
+        _ = AutosaveAsync(autosaveCancellation.Token);
+    }
+
+    private async Task AutosaveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(700, cancellationToken);
+            await SaveCoreAsync(cancellationToken);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // A newer edit owns the next autosave.
+        }
+        catch (Exception exception)
+        {
+            notice = $"Autosave thất bại: {exception.Message}";
+            noticeIsError = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public async Task<StatementSaveResult> SaveNowAsync()
+    {
+        autosaveCancellation?.Cancel();
+        return await SaveCoreAsync(CancellationToken.None);
+    }
+
+    private async Task<StatementSaveResult> SaveCoreAsync(CancellationToken cancellationToken)
+    {
+        var result = await StatementService.SaveUserEditAsync(ProjectId, content, cancellationToken);
+        snapshot = result.Statement;
+        issues = result.Issues;
+        isSaved = result.Succeeded;
+        return result;
+    }
+
+    private async Task SaveButtonAsync()
+    {
+        isBusy = true;
+        try
+        {
+            var result = await SaveNowAsync();
+            notice = result.Message;
+            noticeIsError = !result.Succeeded || result.Issues.Any(issue => issue.Severity == LatexIssueSeverity.Error);
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task GenerateWithAiAsync()
+    {
+        isBusy = isGenerating = true;
+        notice = null;
+        try
+        {
+            await SaveNowAsync();
+            var before = snapshot!;
+            var result = await StatementService.GenerateFromConversationAsync(ProjectId);
+            snapshot = result.Statement;
+            issues = result.Issues;
+            notice = result.Message;
+            noticeIsError = !result.Succeeded;
+            if (result.Succeeded && result.Statement is not null)
+            {
+                content = result.Statement.Content;
+                lastDiff = StatementService.Compare(before.Content, content);
+                versionBeforeLastAi = before.CurrentVersion;
+                lastChangeSummary = result.Message;
+                isSaved = true;
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            isBusy = isGenerating = false;
+        }
+    }
+
+    private async Task UndoAiUpdateAsync()
+    {
+        if (versionBeforeLastAi is { } version)
+        {
+            await RestoreVersionAsync(version);
+            lastDiff = null;
+            versionBeforeLastAi = null;
+        }
+    }
+
+    private async Task RestoreLatestAiAsync()
+    {
+        if (LatestAiVersion is { } version)
+        {
+            await RestoreVersionAsync(version.VersionNumber);
+        }
+    }
+
+    private async Task RestoreVersionAsync(int versionNumber)
+    {
+        isBusy = true;
+        try
+        {
+            snapshot = await StatementService.RestoreAsync(ProjectId, versionNumber);
+            content = snapshot.Content;
+            issues = LatexValidator.Validate(content);
+            isSaved = true;
+            notice = $"Đã khôi phục nội dung từ version {versionNumber} thành version {snapshot.CurrentVersion}.";
+            noticeIsError = false;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private Task UndoEditorAsync() => editor?.UndoAsync() ?? Task.CompletedTask;
+    private Task RedoEditorAsync() => editor?.RedoAsync() ?? Task.CompletedTask;
+    private void ToggleHistory() => showHistory = !showHistory;
+    private bool HasFieldError(string field) => issues.Any(issue => issue.Field == field && issue.Severity == LatexIssueSeverity.Error);
+    private static string FormatProvider(StatementVersionInfo version) =>
+        string.IsNullOrWhiteSpace(version.Provider) ? string.Empty : $"· {version.Provider}/{version.Model}";
+
+    public void Dispose()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
+    }
+}
