@@ -1,5 +1,6 @@
 @page "/settings"
 @inject ISettingsService SettingsService
+@inject IPolygonClient PolygonClient
 
 <PageTitle>Cài đặt · Polygon AI Builder</PageTitle>
 
@@ -97,8 +98,15 @@ else
                 <label class="form-check-label" for="clear-polygon-secret">Xóa API secret đã lưu</label>
             </div>
             <div class="button-row">
-                <button class="btn btn-secondary" disabled title="Kết nối Polygon được triển khai ở phase 2">Test connection</button>
+                <button class="btn btn-secondary" @onclick="TestPolygonAsync"
+                        disabled="@(isBusy || !snapshot.HasPolygonApiKey || !snapshot.HasPolygonApiSecret)">
+                    @(isTestingPolygon ? "Đang kiểm tra…" : "Test connection")
+                </button>
             </div>
+            @if (!string.IsNullOrWhiteSpace(polygonTestMessage))
+            {
+                <p class="connection-result @(polygonTestSucceeded ? "success" : "failed")" role="status">@polygonTestMessage</p>
+            }
         </section>
 
         <section class="panel settings-card toolchain-card">
@@ -136,6 +144,9 @@ else
     private bool clearPolygonApiSecret;
     private bool isLoading = true;
     private bool isBusy;
+    private bool isTestingPolygon;
+    private bool polygonTestSucceeded;
+    private string? polygonTestMessage;
     private bool saveSucceeded;
     private string? statusMessage;
 
@@ -204,5 +215,33 @@ else
         clearGeminiApiKey = false;
         clearPolygonApiKey = false;
         clearPolygonApiSecret = false;
+    }
+
+    private async Task TestPolygonAsync()
+    {
+        isBusy = true;
+        isTestingPolygon = true;
+        polygonTestMessage = null;
+        try
+        {
+            var result = await PolygonClient.TestConnectionAsync();
+            polygonTestSucceeded = result.Succeeded;
+            polygonTestMessage = $"{result.Message} ({result.Duration.TotalMilliseconds:N0} ms)";
+        }
+        catch (IntegrationConfigurationException exception)
+        {
+            polygonTestSucceeded = false;
+            polygonTestMessage = exception.Message;
+        }
+        catch (ExternalServiceException exception)
+        {
+            polygonTestSucceeded = false;
+            polygonTestMessage = exception.Message;
+        }
+        finally
+        {
+            isTestingPolygon = false;
+            isBusy = false;
+        }
     }
 }

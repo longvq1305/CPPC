@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\PolygonAiBuilder.Contracts\PolygonAiBuilder.Contracts.csproj" />
     <ProjectReference Include="..\..\src\PolygonAiBuilder.Application\PolygonAiBuilder.Application.csproj" />
     <ProjectReference Include="..\..\src\PolygonAiBuilder.Infrastructure\PolygonAiBuilder.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\PolygonAiBuilder.Integrations\PolygonAiBuilder.Integrations.csproj" />
   </ItemGroup>
 
 </Project>

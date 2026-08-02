@@ -33,8 +33,40 @@ public interface IProjectService
     Task<bool> SetCurrentScreenAsync(Guid projectId, int screen, CancellationToken cancellationToken = default);
 }
 
+public interface IGeneralInfoService
+{
+    Task<GeneralInfoSaveResult> SaveGeneralInfoAsync(
+        Guid projectId,
+        GeneralInfoDraft draft,
+        CancellationToken cancellationToken = default);
+    Task<NameAvailabilityResult> CheckNameAndContinueAsync(
+        Guid projectId,
+        GeneralInfoDraft draft,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ISettingsService
 {
     Task<SettingsSnapshot> LoadAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(SettingsUpdate update, CancellationToken cancellationToken = default);
+}
+
+public interface IPolygonClient
+{
+    Task<IReadOnlyList<PolygonProblem>> ListProblemsAsync(
+        string? name,
+        CancellationToken cancellationToken = default);
+    Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default);
+}
+
+public sealed class IntegrationConfigurationException(string message) : Exception(message);
+
+public sealed class ExternalServiceException(
+    string service,
+    string code,
+    string message,
+    Exception? innerException = null) : Exception(message, innerException)
+{
+    public string Service { get; } = service;
+    public string Code { get; } = code;
 }

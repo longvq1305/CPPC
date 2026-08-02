@@ -24,6 +24,7 @@ public sealed record ProjectDetails(
     int MemoryLimitMb,
     AiProviderKind SelectedProvider,
     string SelectedModel,
+    DateTimeOffset? NameAvailableCheckedAt,
     DateTimeOffset UpdatedAt);
 
 public sealed record SecretBundle(
@@ -60,3 +61,33 @@ public sealed record SettingsUpdate(
     string GeminiDefaultModel);
 
 public sealed record ValidationIssue(string Field, string Message);
+
+public sealed record GeneralInfoDraft(
+    string InternalName,
+    string InputFile,
+    string OutputFile,
+    int TimeLimitMs,
+    int MemoryLimitMb);
+
+public sealed record GeneralInfoSaveResult(
+    bool Succeeded,
+    IReadOnlyList<ValidationIssue> Issues,
+    ProjectDetails? Project)
+{
+    public static GeneralInfoSaveResult Invalid(IReadOnlyList<ValidationIssue> issues) =>
+        new(false, issues, null);
+
+    public static GeneralInfoSaveResult Saved(ProjectDetails project) =>
+        new(true, [], project);
+}
+
+public sealed record PolygonProblem(long Id, string Name, string Owner, bool Deleted);
+
+public sealed record ConnectionTestResult(bool Succeeded, string Message, TimeSpan Duration);
+
+public sealed record NameAvailabilityResult(
+    bool Succeeded,
+    bool IsAvailable,
+    string Message,
+    IReadOnlyList<ValidationIssue> Issues,
+    ProjectDetails? Project);

@@ -44,7 +44,7 @@ public sealed class ProjectService(IProjectRepository repository, TimeProvider t
         return true;
     }
 
-    private static ProjectSummary MapSummary(ProblemProject project) => new(
+    internal static ProjectSummary MapSummary(ProblemProject project) => new(
         project.Id,
         project.InternalName,
         project.CurrentScreen,
@@ -53,7 +53,7 @@ public sealed class ProjectService(IProjectRepository repository, TimeProvider t
         project.PolygonProblemId,
         project.UpdatedAt);
 
-    private static ProjectDetails MapDetails(ProblemProject project) => new(
+    internal static ProjectDetails MapDetails(ProblemProject project) => new(
         project.Id,
         project.InternalName,
         project.CurrentScreen,
@@ -66,5 +66,6 @@ public sealed class ProjectService(IProjectRepository repository, TimeProvider t
         project.GeneralInfo.MemoryLimitMb,
         project.SelectedProvider,
         project.SelectedModel,
+        project.NameAvailableCheckedAt,
         project.UpdatedAt);
 }

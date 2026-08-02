@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IApplicationSettingsRepository, ApplicationSettingsRepository>();
         services.AddSingleton<ISecretStore, DpapiSecretStore>();
         services.AddScoped<IProjectService, ProjectService>();
+        services.AddScoped<IGeneralInfoService, GeneralInfoService>();
         services.AddScoped<ISettingsService, SettingsService>();
         return services;
     }

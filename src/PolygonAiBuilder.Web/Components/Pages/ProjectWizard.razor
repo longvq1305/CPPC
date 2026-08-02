@@ -1,6 +1,8 @@
 @page "/projects/{ProjectId:guid}/step/{Step:int}"
 @inject IProjectService ProjectService
+@inject IGeneralInfoService GeneralInfoService
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <PageTitle>@(project?.InternalName ?? "Dự án") · Polygon AI Builder</PageTitle>
 
@@ -23,7 +25,7 @@ else
             <a class="back-link" href="/">← Tất cả dự án</a>
             <h1>@project.InternalName</h1>
         </div>
-        <div class="autosave-indicator"><span class="status-dot"></span> Đã lưu local</div>
+        <div class="autosave-indicator @autosaveClass"><span class="status-dot"></span> @autosaveText</div>
     </header>
 
     <nav class="wizard-progress panel" aria-label="Tiến trình tạo problem">
@@ -47,31 +49,76 @@ else
 
         @if (Step == 1)
         {
-            <div class="general-info-grid">
-                <label>
+            <div class="general-info-grid" aria-label="General Info">
+                <label for="internal-name">
                     <span>Polygon internal problem name</span>
-                    <input class="form-control" value="@project.InternalName" readonly />
+                    <input id="internal-name" class="form-control @(HasIssue("InternalName") ? "is-invalid" : "")"
+                           maxlength="128" autocomplete="off" @bind="internalName" @bind:event="oninput"
+                           @bind:after="QueueAutosaveAsync" disabled="@isNavigating" />
+                    @if (GetIssue("InternalName") is { } internalNameIssue)
+                    {
+                        <small class="field-error">@internalNameIssue</small>
+                    }
                 </label>
-                <label>
+                <label for="input-file">
                     <span>Input file</span>
-                    <input class="form-control" value="@project.InputFile" readonly />
+                    <input id="input-file" class="form-control @(HasIssue("InputFile") ? "is-invalid" : "")"
+                           maxlength="64" @bind="inputFile" @bind:event="oninput"
+                           @bind:after="QueueAutosaveAsync" disabled="@isNavigating" />
+                    @if (GetIssue("InputFile") is { } inputIssue)
+                    {
+                        <small class="field-error">@inputIssue</small>
+                    }
                 </label>
-                <label>
+                <label for="output-file">
                     <span>Output file</span>
-                    <input class="form-control" value="@project.OutputFile" readonly />
+                    <input id="output-file" class="form-control @(HasIssue("OutputFile") ? "is-invalid" : "")"
+                           maxlength="64" @bind="outputFile" @bind:event="oninput"
+                           @bind:after="QueueAutosaveAsync" disabled="@isNavigating" />
+                    @if (GetIssue("OutputFile") is { } outputIssue)
+                    {
+                        <small class="field-error">@outputIssue</small>
+                    }
                 </label>
-                <label>
+                <label for="time-limit">
                     <span>Time limit</span>
-                    <div class="input-suffix"><input class="form-control" value="@project.TimeLimitMs" readonly /><span>ms</span></div>
+                    <div class="input-suffix">
+                        <input id="time-limit" type="number" min="250" max="15000" step="50"
+                               class="form-control @(HasIssue("TimeLimitMs") ? "is-invalid" : "")"
+                               @bind="timeLimitMs" @bind:event="oninput" @bind:after="QueueAutosaveAsync"
+                               disabled="@isNavigating" />
+                        <span>ms</span>
+                    </div>
                     <small>250–15.000 ms, chia hết cho 50</small>
+                    @if (GetIssue("TimeLimitMs") is { } timeIssue)
+                    {
+                        <small class="field-error">@timeIssue</small>
+                    }
                 </label>
-                <label>
+                <label for="memory-limit">
                     <span>Memory limit</span>
-                    <div class="input-suffix"><input class="form-control" value="@project.MemoryLimitMb" readonly /><span>MB</span></div>
+                    <div class="input-suffix">
+                        <input id="memory-limit" type="number" min="4" max="1024" step="1"
+                               class="form-control @(HasIssue("MemoryLimitMb") ? "is-invalid" : "")"
+                               @bind="memoryLimitMb" @bind:event="oninput" @bind:after="QueueAutosaveAsync"
+                               disabled="@isNavigating" />
+                        <span>MB</span>
+                    </div>
                     <small>4–1.024 MB</small>
+                    @if (GetIssue("MemoryLimitMb") is { } memoryIssue)
+                    {
+                        <small class="field-error">@memoryIssue</small>
+                    }
                 </label>
             </div>
-            <div class="notice notice-info">Foundation đã lưu các giá trị mặc định. Duplicate-name check có chữ ký Polygon sẽ được nối vào nút Tiếp theo ở phase 2; không có problem remote nào được tạo tại đây.</div>
+            @if (!string.IsNullOrWhiteSpace(workflowMessage))
+            {
+                <div class="notice @workflowNoticeClass" role="status">@workflowMessage</div>
+            }
+            else
+            {
+                <div class="notice notice-info">Nút Tiếp theo chỉ gọi <code>problems.list</code> để kiểm tra tên. Problem trên Polygon chưa được tạo ở bước này.</div>
+            }
         }
         else
         {
@@ -96,6 +143,17 @@ else
 
     private static readonly string[] Steps = ["General Info", "AI Workspace", "Statement", "Code", "Tests & Sync"];
     private ProjectDetails? project;
+    private string internalName = string.Empty;
+    private string inputFile = "stdin";
+    private string outputFile = "stdout";
+    private int timeLimitMs = 1000;
+    private int memoryLimitMb = 256;
+    private IReadOnlyList<ValidationIssue> validationIssues = [];
+    private CancellationTokenSource? autosaveCancellation;
+    private string autosaveText = "Đã lưu local";
+    private string autosaveClass = "saved";
+    private string? workflowMessage;
+    private string workflowNoticeClass = "notice-info";
     private bool isLoading = true;
     private bool isNavigating;
 
@@ -109,6 +167,26 @@ else
 
         isLoading = true;
         project = await ProjectService.GetAsync(ProjectId);
+        if (project is not null)
+        {
+            internalName = project.InternalName;
+            inputFile = project.InputFile;
+            outputFile = project.OutputFile;
+            timeLimitMs = project.TimeLimitMs;
+            memoryLimitMb = project.MemoryLimitMb;
+        }
+
+        if (project is not null
+            && Step > 1
+            && project.NameAvailableCheckedAt is null
+            && project.PolygonProblemId is null)
+        {
+            await ProjectService.SetCurrentScreenAsync(ProjectId, 1);
+            isLoading = false;
+            Navigation.NavigateTo($"/projects/{ProjectId}/step/1", replace: true);
+            return;
+        }
+
         if (project is not null && project.CurrentScreen != Step)
         {
             await ProjectService.SetCurrentScreenAsync(ProjectId, Step);
@@ -119,7 +197,7 @@ else
     }
 
     private Task PreviousAsync() => NavigateToStepAsync(Step - 1);
-    private Task NextAsync() => NavigateToStepAsync(Step + 1);
+    private Task NextAsync() => Step == 1 ? CheckNameAndContinueAsync() : NavigateToStepAsync(Step + 1);
 
     private async Task NavigateToStepAsync(int target)
     {
@@ -128,9 +206,121 @@ else
             return;
         }
 
+        if (Step == 1 && target > 1)
+        {
+            await CheckNameAndContinueAsync();
+            return;
+        }
+
         isNavigating = true;
         await ProjectService.SetCurrentScreenAsync(ProjectId, target);
         Navigation.NavigateTo($"/projects/{ProjectId}/step/{target}");
+    }
+
+    private Task QueueAutosaveAsync()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
+        autosaveCancellation = new CancellationTokenSource();
+        autosaveText = "Chưa lưu";
+        autosaveClass = "pending";
+        workflowMessage = null;
+        _ = AutosaveAfterDelayAsync(autosaveCancellation.Token);
+        return Task.CompletedTask;
+    }
+
+    private async Task AutosaveAfterDelayAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(500, cancellationToken);
+            await SaveDraftAsync(showSavedMessage: false, cancellationToken);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception)
+        {
+            autosaveText = "Lưu thất bại";
+            autosaveClass = "failed";
+            workflowMessage = "Không thể autosave. Dữ liệu trên màn hình vẫn được giữ; hãy thử lại.";
+            workflowNoticeClass = "notice-error";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<bool> SaveDraftAsync(bool showSavedMessage, CancellationToken cancellationToken)
+    {
+        var result = await GeneralInfoService.SaveGeneralInfoAsync(ProjectId, CreateDraft(), cancellationToken);
+        validationIssues = result.Issues;
+        if (!result.Succeeded || result.Project is null)
+        {
+            autosaveText = "Chưa hợp lệ";
+            autosaveClass = "failed";
+            return false;
+        }
+
+        project = result.Project;
+        internalName = result.Project.InternalName;
+        inputFile = result.Project.InputFile;
+        outputFile = result.Project.OutputFile;
+        autosaveText = "Đã lưu local";
+        autosaveClass = "saved";
+        if (showSavedMessage)
+        {
+            workflowMessage = "Đã lưu General Info trên máy này.";
+            workflowNoticeClass = "notice-success";
+        }
+
+        return true;
+    }
+
+    private async Task CheckNameAndContinueAsync()
+    {
+        autosaveCancellation?.Cancel();
+        isNavigating = true;
+        workflowMessage = "Đang kiểm tra tên bằng Polygon API…";
+        workflowNoticeClass = "notice-info";
+        try
+        {
+            var result = await GeneralInfoService.CheckNameAndContinueAsync(ProjectId, CreateDraft());
+            validationIssues = result.Issues;
+            workflowMessage = result.Message;
+            workflowNoticeClass = result.Succeeded && result.IsAvailable ? "notice-success" : "notice-error";
+            if (result.Succeeded && result.IsAvailable)
+            {
+                project = result.Project;
+                Navigation.NavigateTo($"/projects/{ProjectId}/step/2");
+            }
+        }
+        catch (IntegrationConfigurationException exception)
+        {
+            workflowMessage = $"{exception.Message} Mở Cài đặt để bổ sung credential.";
+            workflowNoticeClass = "notice-error";
+        }
+        catch (ExternalServiceException exception)
+        {
+            workflowMessage = exception.Message;
+            workflowNoticeClass = "notice-error";
+        }
+        finally
+        {
+            isNavigating = false;
+        }
+    }
+
+    private GeneralInfoDraft CreateDraft() =>
+        new(internalName, inputFile, outputFile, timeLimitMs, memoryLimitMb);
+
+    private bool HasIssue(string field) => validationIssues.Any(issue => issue.Field == field);
+    private string? GetIssue(string field) => validationIssues.FirstOrDefault(issue => issue.Field == field)?.Message;
+
+    public void Dispose()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
     }
 
     private static string GetStepDescription(int step) => step switch

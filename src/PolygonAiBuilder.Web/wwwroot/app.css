@@ -118,6 +118,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .wizard-title-row h1 { font-size: 1.75rem; margin: .55rem 0 0; }
 .back-link { color: var(--muted); text-decoration: none; font-size: .75rem; font-weight: 650; }
 .autosave-indicator { display: inline-flex; align-items: center; gap: .55rem; color: var(--muted); font-size: .72rem; }
+.autosave-indicator.pending .status-dot { background: #fbbf24; box-shadow: 0 0 0 4px rgb(251 191 36 / .12); }
+.autosave-indicator.failed .status-dot { background: #fb7185; box-shadow: 0 0 0 4px rgb(251 113 133 / .12); }
 .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 999px; background: #32d583; }
 .wizard-progress { display: grid; grid-template-columns: repeat(5, 1fr); margin-bottom: 1rem; padding: .6rem; overflow: hidden; }
 .wizard-step { display: flex; align-items: center; justify-content: center; gap: .55rem; min-height: 48px; color: var(--muted); background: transparent; border: 0; border-radius: 9px; }
@@ -133,6 +135,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .general-info-grid { display: grid; grid-template-columns: repeat(2, minmax(240px, 1fr)); gap: 1rem 1.2rem; max-width: 920px; }
 .general-info-grid label:first-child { grid-column: 1 / -1; }
 .general-info-grid small { display: block; margin-top: .35rem; color: var(--muted); font-size: .68rem; }
+.general-info-grid .field-error { color: #fda4af; }
 .input-suffix { position: relative; }
 .input-suffix .form-control { padding-right: 3.2rem; }
 .input-suffix > span { position: absolute; right: .8rem; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: .72rem; }
@@ -146,6 +149,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid 
 .diagnostics-panel { padding: 1.5rem; }
 .diagnostics-list div { align-items: flex-start; }
 .path-value { max-width: 70%; overflow-wrap: anywhere; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.connection-result { margin: .9rem 0 0; font-size: .8rem; }
+.connection-result.success { color: #6ee7b7; }
+.connection-result.failed { color: #fda4af; }
 
 #blazor-error-ui { color-scheme: light; background: #fff4d6; bottom: 0; box-shadow: 0 -1px 8px rgb(0 0 0 / .2); display: none; left: 0; padding: .75rem 1.25rem; position: fixed; width: 100%; z-index: 1000; color: #3c2e00; }
 #blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .9rem; top: .65rem; }

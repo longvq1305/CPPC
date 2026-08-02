@@ -1,4 +1,5 @@
 using PolygonAiBuilder.Infrastructure;
+using PolygonAiBuilder.Integrations;
 using PolygonAiBuilder.Web;
 using PolygonAiBuilder.Web.Components;
 
@@ -7,6 +8,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddSingleton<StartupBrowserLauncher>();
+builder.Services.AddPolygonAiBuilderIntegrations();
 
 var configuredRoot = builder.Configuration["Storage:RootPath"];
 var runtimeRoot = string.IsNullOrWhiteSpace(configuredRoot)

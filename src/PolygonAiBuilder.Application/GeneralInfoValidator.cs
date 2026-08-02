@@ -8,6 +8,7 @@ public static class GeneralInfoValidator
     public const int MinimumMemoryLimitMb = 4;
     public const int MaximumMemoryLimitMb = 1_024;
     public const int MaximumFileNameLength = 64;
+    public const int MaximumInternalNameLength = 128;
 
     public static IReadOnlyList<ValidationIssue> Validate(
         string? internalName,
@@ -20,6 +21,21 @@ public static class GeneralInfoValidator
         if (string.IsNullOrWhiteSpace(internalName))
         {
             issues.Add(new("InternalName", "Tên nội bộ Polygon là bắt buộc."));
+        }
+        else
+        {
+            var normalizedName = internalName.Trim();
+            if (normalizedName.Length > MaximumInternalNameLength)
+            {
+                issues.Add(new(
+                    "InternalName",
+                    $"Tên nội bộ Polygon không được vượt quá {MaximumInternalNameLength} ký tự."));
+            }
+
+            if (normalizedName.Any(char.IsControl))
+            {
+                issues.Add(new("InternalName", "Tên nội bộ Polygon chứa ký tự điều khiển không hợp lệ."));
+            }
         }
 
         ValidateFileName("InputFile", "Input file", inputFile, issues);

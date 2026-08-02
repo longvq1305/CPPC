@@ -27,3 +27,6 @@
   and terminal `dotnet run` could not be trusted to apply IDE browser-launch behavior.
   Startup now checks the configured loopback health endpoint and opens the default
   browser itself; automated hosts explicitly disable this side effect.
+- Phase 2 performed one live, read-only Polygon credential test and one exact-name
+  `problems.list` availability check through the UI. Both succeeded. No Polygon
+  problem was created or modified, and no credential value was printed or logged.

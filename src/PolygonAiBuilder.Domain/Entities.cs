@@ -82,6 +82,31 @@ public sealed class ProblemProject
         UpdatedAt = now;
     }
 
+    public void UpdateGeneralInfo(
+        string internalName,
+        string inputFile,
+        string outputFile,
+        int timeLimitMs,
+        int memoryLimitMb,
+        DateTimeOffset now)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(internalName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(inputFile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(outputFile);
+
+        var normalizedName = internalName.Trim();
+        var normalizedInput = inputFile.Trim();
+        var normalizedOutput = outputFile.Trim();
+        if (!string.Equals(InternalName, normalizedName, StringComparison.Ordinal))
+        {
+            InternalName = normalizedName;
+            NameAvailableCheckedAt = null;
+        }
+
+        GeneralInfo.Update(normalizedInput, normalizedOutput, timeLimitMs, memoryLimitMb);
+        UpdatedAt = now;
+    }
+
     public void LinkPolygonProblem(long problemId, DateTimeOffset now)
     {
         if (problemId <= 0)
@@ -132,6 +157,14 @@ public sealed class GeneralInfo
     public ProblemProject ProblemProject { get; private set; } = null!;
 
     internal static GeneralInfo Create(Guid projectId) => new() { ProblemProjectId = projectId };
+
+    internal void Update(string inputFile, string outputFile, int timeLimitMs, int memoryLimitMb)
+    {
+        InputFile = inputFile;
+        OutputFile = outputFile;
+        TimeLimitMs = timeLimitMs;
+        MemoryLimitMb = memoryLimitMb;
+    }
 }
 
 public sealed class Statement

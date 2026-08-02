@@ -98,7 +98,7 @@ through `IDbContextFactory`.
    - Solution, layering, domain model, SQLite migration, repositories.
    - Dashboard, project creation/deletion, wizard shell, current-screen persistence.
    - Settings, DPAPI CurrentUser encrypted secret file, non-secret settings.
-2. **General Info and Polygon read-only**
+2. **General Info and Polygon read-only — complete (2026-08-02)**
    - Exact five fields, current official validation, autosave, connection test,
      signed `problems.list`, duplicate-name gate without remote creation.
 3. **AI workspace**
@@ -127,6 +127,13 @@ create/open/delete works in the in-app browser, Settings renders without exposin
 stored values, the SQLite migration applies on startup, and the foundation unit,
 integration, and host tests pass. Phases 2–8 remain planned and are not represented
 as production-complete by the foundation UI.
+
+Phase 2 verification: General Info autosaves valid values, blocks invalid values,
+requires an exact signed `problems.list` duplicate-name check before step 2, and
+never calls `problem.create`. Polygon signing and response handling have unit/mock
+HTTP coverage. The saved real Polygon credential was tested successfully through the
+Settings UI, and a temporary local project passed the read-only availability flow;
+the temporary project was removed afterward.
 
 Each phase ends with formatting, a Release build, relevant tests, a plan status
 update, and a separate commit. Full Release build and the complete test suite are
