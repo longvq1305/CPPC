@@ -1,0 +1,454 @@
+@using Microsoft.AspNetCore.Components.Web
+@inject IAiWorkspaceService WorkspaceService
+@inject IModelCatalogService ModelCatalog
+@inject IAttachmentStore AttachmentStore
+@inject ISettingsService SettingsService
+@implements IDisposable
+
+<div class="ai-workspace" aria-label="AI Workspace">
+    <section class="statement-preview-pane">
+        <div class="pane-heading">
+            <div>
+                <span class="eyebrow">Live preview</span>
+                <h3>Statement hiện tại</h3>
+            </div>
+            <span class="status-pill neutral">English</span>
+        </div>
+        <div class="empty-statement-preview">
+            <span>¶</span>
+            <h4>Chưa có statement</h4>
+            <p>Hãy mô tả ý tưởng, mức độ và constraints trong chat. AI sẽ cùng bạn phác thảo trước khi cập nhật năm trường statement.</p>
+        </div>
+    </section>
+
+    <section class="chat-pane">
+        <div class="chat-toolbar">
+            <label>
+                <span>Provider</span>
+                <select class="form-select" value="@selectedProvider" @onchange="ProviderChangedAsync" disabled="@isStreaming">
+                    <option value="@AiProviderKind.OpenAI">OpenAI</option>
+                    <option value="@AiProviderKind.Gemini">Gemini</option>
+                </select>
+            </label>
+            <label class="model-field">
+                <span>Model</span>
+                <input class="form-control" list="workspace-models" maxlength="200"
+                       placeholder="Chọn hoặc nhập model ID" @bind="selectedModel" @bind:event="oninput"
+                       @bind:after="SaveSelectionAsync" disabled="@isStreaming" />
+                <datalist id="workspace-models">
+                    @foreach (var model in models)
+                    {
+                        <option value="@model.Id">@model.DisplayName</option>
+                    }
+                </datalist>
+            </label>
+            <button class="icon-action" title="Refresh models" @onclick="RefreshModelsAsync" disabled="@(isStreaming || isRefreshing)">↻</button>
+            <button class="icon-action" title="Tạo lại phản hồi gần nhất" @onclick="RegenerateAsync"
+                    disabled="@(isStreaming || LastUserMessage is null || string.IsNullOrWhiteSpace(selectedModel))">⟳</button>
+            <button class="icon-action stop-action" title="Dừng phản hồi" @onclick="Stop" disabled="@(!isStreaming)">■</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(notice))
+        {
+            <div class="chat-notice @(noticeIsError ? "error" : "info")" role="status">@notice</div>
+        }
+
+        <div class="message-list" aria-live="polite">
+            @if (isLoading)
+            {
+                <div class="chat-empty">Đang tải conversation…</div>
+            }
+            else if (messages.Count == 0)
+            {
+                <div class="chat-empty">
+                    <strong>Một conversation duy nhất cho dự án này</strong>
+                    <span>Bạn có thể đổi OpenAI/Gemini bất kỳ lúc nào; lịch sử local vẫn được giữ nguyên.</span>
+                </div>
+            }
+            else
+            {
+                @foreach (var message in messages)
+                {
+                    <article class="chat-message @(message.Role == MessageRole.User ? "user" : "assistant")" @key="message.Id">
+                        <div class="message-meta">
+                            <strong>@(message.Role == MessageRole.User ? "Bạn" : message.Provider ?? "AI")</strong>
+                            @if (!string.IsNullOrWhiteSpace(message.Model))
+                            {
+                                <span>@message.Model</span>
+                            }
+                            <time>@message.CreatedAt.ToLocalTime().ToString("HH:mm")</time>
+                        </div>
+                        @if (message.Attachments.Count > 0)
+                        {
+                            <div class="message-attachments">
+                                @foreach (var attachment in message.Attachments)
+                                {
+                                    <span>📎 @attachment.OriginalFileName</span>
+                                }
+                            </div>
+                        }
+                        <div class="message-body">@message.ContentMarkdown</div>
+                        @if (message.Status != MessageStatus.Completed)
+                        {
+                            <div class="message-state @message.Status.ToString().ToLowerInvariant()">
+                                @GetStatusText(message)
+                            </div>
+                        }
+                    </article>
+                }
+            }
+        </div>
+
+        <div class="composer">
+            @if (pendingAttachments.Count > 0)
+            {
+                <div class="pending-attachments">
+                    @foreach (var attachment in pendingAttachments)
+                    {
+                        <span>
+                            📎 @attachment.OriginalFileName <small>@FormatSize(attachment.SizeBytes)</small>
+                            <button title="Bỏ tệp" @onclick="() => RemoveAttachmentAsync(attachment.Id)" disabled="@isStreaming">×</button>
+                        </span>
+                    }
+                </div>
+            }
+            <textarea class="form-control" rows="3" placeholder="Mô tả ý tưởng, chủ đề, độ khó, constraints…"
+                      @bind="prompt" @bind:event="oninput" @onkeydown="ComposerKeyDownAsync" disabled="@isStreaming"></textarea>
+            <div class="composer-actions">
+                <label class="btn btn-ghost attachment-button" title="Tệp tối đa 20 MB; tổng mỗi tin nhắn 50 MB">
+                    <InputFile OnChange="FilesSelectedAsync" multiple accept=".png,.jpg,.jpeg,.webp,.pdf,.txt,.md,.cpp,.c,.h,.hpp,.cs,.json,.zip" />
+                    + Đính kèm
+                </label>
+                <span>Ctrl + Enter để gửi</span>
+                <button class="btn btn-primary app-primary" @onclick="SendAsync"
+                        disabled="@(isStreaming || isUploading || string.IsNullOrWhiteSpace(selectedModel) || (string.IsNullOrWhiteSpace(prompt) && pendingAttachments.Count == 0))">
+                    @(isStreaming ? "Đang tạo…" : "Gửi")
+                </button>
+            </div>
+        </div>
+    </section>
+</div>
+
+@if (pendingProvider is not null)
+{
+    <div class="confirmation-backdrop" role="presentation">
+        <section class="confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="provider-confirm-title">
+            <h3 id="provider-confirm-title">Chuyển provider?</h3>
+            <p>Bạn đang chuyển từ <strong>@selectedProvider</strong> sang <strong>@pendingProvider</strong>.</p>
+            <p>Lịch sử hội thoại và các tệp liên quan sẽ được gửi cho provider mới để tiếp tục cùng ngữ cảnh.</p>
+            <div class="button-row">
+                <button class="btn btn-ghost" @onclick="CancelProviderSwitch">Hủy</button>
+                <button class="btn btn-primary app-primary" @onclick="ConfirmProviderSwitchAsync">Chuyển provider</button>
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public Guid ProjectId { get; set; }
+
+    private AiProviderKind selectedProvider;
+    private AiProviderKind? pendingProvider;
+    private string selectedModel = string.Empty;
+    private string prompt = string.Empty;
+    private IReadOnlyList<AiModelInfo> models = [];
+    private List<ConversationMessageInfo> messages = [];
+    private List<AttachmentInfo> pendingAttachments = [];
+    private CancellationTokenSource? generationCancellation;
+    private bool isLoading = true;
+    private bool isStreaming;
+    private bool isRefreshing;
+    private bool isUploading;
+    private bool noticeIsError;
+    private string? notice;
+
+    private ConversationMessageInfo? LastUserMessage => messages.LastOrDefault(message => message.Role == MessageRole.User);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadWorkspaceAsync();
+    }
+
+    private async Task LoadWorkspaceAsync()
+    {
+        isLoading = true;
+        try
+        {
+            var workspace = await WorkspaceService.LoadAsync(ProjectId);
+            if (workspace is null)
+            {
+                notice = "Không tìm thấy conversation của dự án.";
+                noticeIsError = true;
+                return;
+            }
+
+            selectedProvider = workspace.SelectedProvider;
+            selectedModel = workspace.SelectedModel;
+            messages = workspace.Messages.ToList();
+            pendingAttachments = workspace.PendingAttachments.ToList();
+            var settings = await SettingsService.LoadAsync();
+            if (string.IsNullOrWhiteSpace(selectedModel))
+            {
+                selectedModel = selectedProvider == AiProviderKind.OpenAI
+                    ? settings.OpenAiDefaultModel
+                    : settings.GeminiDefaultModel;
+                if (!string.IsNullOrWhiteSpace(selectedModel))
+                {
+                    await WorkspaceService.SetSelectionAsync(ProjectId, selectedProvider, selectedModel);
+                }
+            }
+
+            await LoadModelsAsync(refresh: false);
+        }
+        catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task LoadModelsAsync(bool refresh)
+    {
+        models = await ModelCatalog.GetModelsAsync(selectedProvider, refresh);
+        if (!string.IsNullOrWhiteSpace(selectedModel)
+            && models.All(model => !string.Equals(model.Id, selectedModel, StringComparison.Ordinal)))
+        {
+            notice = $"Model “{selectedModel}” không còn trong danh sách hiện tại. Model ID vẫn được giữ; hãy chọn lại trước khi gửi nếu provider không hỗ trợ.";
+            noticeIsError = true;
+        }
+    }
+
+    private async Task RefreshModelsAsync()
+    {
+        isRefreshing = true;
+        notice = null;
+        try
+        {
+            await LoadModelsAsync(refresh: true);
+            if (string.IsNullOrWhiteSpace(notice))
+            {
+                notice = $"Đã tải {models.Count} model từ {selectedProvider}.";
+                noticeIsError = false;
+            }
+        }
+        catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            isRefreshing = false;
+        }
+    }
+
+    private async Task ProviderChangedAsync(ChangeEventArgs args)
+    {
+        if (!Enum.TryParse<AiProviderKind>(args.Value?.ToString(), out var proposed)
+            || proposed == selectedProvider)
+        {
+            return;
+        }
+
+        if (messages.Count > 0)
+        {
+            pendingProvider = proposed;
+            return;
+        }
+
+        await ApplyProviderAsync(proposed);
+    }
+
+    private void CancelProviderSwitch() => pendingProvider = null;
+
+    private async Task ConfirmProviderSwitchAsync()
+    {
+        if (pendingProvider is { } provider)
+        {
+            pendingProvider = null;
+            await ApplyProviderAsync(provider);
+        }
+    }
+
+    private async Task ApplyProviderAsync(AiProviderKind provider)
+    {
+        selectedProvider = provider;
+        var settings = await SettingsService.LoadAsync();
+        selectedModel = provider == AiProviderKind.OpenAI
+            ? settings.OpenAiDefaultModel
+            : settings.GeminiDefaultModel;
+        await LoadModelsAsync(refresh: false);
+        if (!string.IsNullOrWhiteSpace(selectedModel))
+        {
+            await WorkspaceService.SetSelectionAsync(ProjectId, selectedProvider, selectedModel);
+        }
+    }
+
+    private async Task SaveSelectionAsync()
+    {
+        if (!isStreaming && !string.IsNullOrWhiteSpace(selectedModel))
+        {
+            await WorkspaceService.SetSelectionAsync(ProjectId, selectedProvider, selectedModel.Trim());
+        }
+    }
+
+    private async Task FilesSelectedAsync(InputFileChangeEventArgs args)
+    {
+        isUploading = true;
+        notice = null;
+        try
+        {
+            var files = args.GetMultipleFiles(20);
+            var total = pendingAttachments.Sum(attachment => attachment.SizeBytes) + files.Sum(file => file.Size);
+            if (total > 50L * 1024 * 1024)
+            {
+                throw new AttachmentValidationException("Tổng tệp đính kèm của một tin nhắn không được vượt quá 50 MB.");
+            }
+
+            foreach (var file in files)
+            {
+                await using var stream = file.OpenReadStream(20L * 1024 * 1024);
+                var saved = await AttachmentStore.SaveAsync(
+                    ProjectId,
+                    file.Name,
+                    file.ContentType,
+                    stream,
+                    file.Size);
+                pendingAttachments.Add(saved);
+            }
+        }
+        catch (Exception exception) when (exception is AttachmentValidationException or IOException or InvalidOperationException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task RemoveAttachmentAsync(Guid attachmentId)
+    {
+        if (await AttachmentStore.RemovePendingAsync(attachmentId))
+        {
+            pendingAttachments.RemoveAll(attachment => attachment.Id == attachmentId);
+        }
+    }
+
+    private async Task ComposerKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.CtrlKey && args.Key == "Enter")
+        {
+            await SendAsync();
+        }
+    }
+
+    private Task RegenerateAsync()
+    {
+        if (LastUserMessage is { } user)
+        {
+            prompt = user.ContentMarkdown;
+        }
+
+        return SendAsync();
+    }
+
+    private async Task SendAsync()
+    {
+        if (isStreaming || string.IsNullOrWhiteSpace(selectedModel)
+            || (string.IsNullOrWhiteSpace(prompt) && pendingAttachments.Count == 0))
+        {
+            return;
+        }
+
+        isStreaming = true;
+        notice = null;
+        generationCancellation = new CancellationTokenSource();
+        var submittedPrompt = prompt;
+        var submittedAttachments = pendingAttachments.Select(attachment => attachment.Id).ToArray();
+        prompt = string.Empty;
+        try
+        {
+            await foreach (var progress in WorkspaceService.SendAsync(
+                               ProjectId,
+                               submittedPrompt,
+                               selectedProvider,
+                               selectedModel,
+                               submittedAttachments,
+                               generationCancellation.Token))
+            {
+                var assistant = messages.FirstOrDefault(message => message.Id == progress.AssistantMessageId);
+                if (assistant is null)
+                {
+                    var workspace = await WorkspaceService.LoadAsync(ProjectId, generationCancellation.Token);
+                    if (workspace is not null)
+                    {
+                        messages = workspace.Messages.ToList();
+                        pendingAttachments = workspace.PendingAttachments.ToList();
+                    }
+                }
+                else
+                {
+                    var index = messages.IndexOf(assistant);
+                    messages[index] = assistant with
+                    {
+                        ContentMarkdown = assistant.ContentMarkdown + progress.Delta,
+                        Status = progress.Status,
+                        ErrorDetails = progress.ErrorMessage,
+                    };
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (generationCancellation.IsCancellationRequested)
+        {
+            notice = "Đã dừng phản hồi; phần nội dung đã nhận vẫn được lưu local.";
+            noticeIsError = false;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IntegrationConfigurationException
+                                               or ExternalServiceException or AttachmentValidationException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+            prompt = submittedPrompt;
+        }
+        finally
+        {
+            isStreaming = false;
+            generationCancellation.Dispose();
+            generationCancellation = null;
+            var workspace = await WorkspaceService.LoadAsync(ProjectId);
+            if (workspace is not null)
+            {
+                messages = workspace.Messages.ToList();
+                pendingAttachments = workspace.PendingAttachments.ToList();
+            }
+        }
+    }
+
+    private void Stop() => generationCancellation?.Cancel();
+
+    private static string GetStatusText(ConversationMessageInfo message) => message.Status switch
+    {
+        MessageStatus.Streaming => "Đang tạo phản hồi…",
+        MessageStatus.Cancelled => "Đã dừng — nội dung từng phần đã được giữ lại.",
+        MessageStatus.Failed => message.ErrorDetails ?? "Phản hồi thất bại.",
+        _ => string.Empty,
+    };
+
+    private static string FormatSize(long bytes) => bytes >= 1024 * 1024
+        ? $"{bytes / 1024d / 1024d:N1} MB"
+        : $"{Math.Max(1, bytes / 1024d):N0} KB";
+
+    public void Dispose()
+    {
+        generationCancellation?.Cancel();
+        generationCancellation?.Dispose();
+    }
+}

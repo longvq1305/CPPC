@@ -1,6 +1,7 @@
 @page "/settings"
 @inject ISettingsService SettingsService
 @inject IPolygonClient PolygonClient
+@inject IModelCatalogService ModelCatalog
 
 <PageTitle>Cài đặt · Polygon AI Builder</PageTitle>
 
@@ -43,12 +44,26 @@ else
                 <label class="form-check-label" for="clear-openai">Xóa key đã lưu</label>
             </div>
             <label for="openai-model">Model mặc định</label>
-            <input id="openai-model" class="form-control" maxlength="200" placeholder="Chọn sau khi Refresh models"
-                   @bind="openAiDefaultModel" />
+            <input id="openai-model" class="form-control" maxlength="200" list="openai-models"
+                   placeholder="Refresh models hoặc nhập model ID" @bind="openAiDefaultModel" />
+            <datalist id="openai-models">
+                @foreach (var model in openAiModels)
+                {
+                    <option value="@model.Id">@model.DisplayName</option>
+                }
+            </datalist>
             <div class="button-row">
-                <button class="btn btn-secondary" disabled title="Model discovery được triển khai ở phase AI">Refresh models</button>
-                <button class="btn btn-secondary" disabled title="Kết nối thật được triển khai cùng provider adapter">Test connection</button>
+                <button class="btn btn-secondary" @onclick="() => RefreshModelsAsync(AiProviderKind.OpenAI)"
+                        disabled="@(isBusy || !snapshot.HasOpenAiApiKey)">
+                    @(isRefreshingOpenAi ? "Đang tải…" : "Refresh models")
+                </button>
+                <button class="btn btn-secondary" @onclick="() => TestAiAsync(AiProviderKind.OpenAI)"
+                        disabled="@(isBusy || !snapshot.HasOpenAiApiKey)">Test connection</button>
             </div>
+            @if (!string.IsNullOrWhiteSpace(openAiTestMessage))
+            {
+                <p class="connection-result @(openAiTestSucceeded ? "success" : "failed")" role="status">@openAiTestMessage</p>
+            }
         </section>
 
         <section class="panel settings-card">
@@ -67,12 +82,26 @@ else
                 <label class="form-check-label" for="clear-gemini">Xóa key đã lưu</label>
             </div>
             <label for="gemini-model">Model mặc định</label>
-            <input id="gemini-model" class="form-control" maxlength="200" placeholder="Chọn sau khi Refresh models"
-                   @bind="geminiDefaultModel" />
+            <input id="gemini-model" class="form-control" maxlength="200" list="gemini-models"
+                   placeholder="Refresh models hoặc nhập model ID" @bind="geminiDefaultModel" />
+            <datalist id="gemini-models">
+                @foreach (var model in geminiModels)
+                {
+                    <option value="@model.Id">@model.DisplayName</option>
+                }
+            </datalist>
             <div class="button-row">
-                <button class="btn btn-secondary" disabled title="Model discovery được triển khai ở phase AI">Refresh models</button>
-                <button class="btn btn-secondary" disabled title="Kết nối thật được triển khai cùng provider adapter">Test connection</button>
+                <button class="btn btn-secondary" @onclick="() => RefreshModelsAsync(AiProviderKind.Gemini)"
+                        disabled="@(isBusy || !snapshot.HasGeminiApiKey)">
+                    @(isRefreshingGemini ? "Đang tải…" : "Refresh models")
+                </button>
+                <button class="btn btn-secondary" @onclick="() => TestAiAsync(AiProviderKind.Gemini)"
+                        disabled="@(isBusy || !snapshot.HasGeminiApiKey)">Test connection</button>
             </div>
+            @if (!string.IsNullOrWhiteSpace(geminiTestMessage))
+            {
+                <p class="connection-result @(geminiTestSucceeded ? "success" : "failed")" role="status">@geminiTestMessage</p>
+            }
         </section>
 
         <section class="panel settings-card">
@@ -145,6 +174,14 @@ else
     private bool isLoading = true;
     private bool isBusy;
     private bool isTestingPolygon;
+    private bool isRefreshingOpenAi;
+    private bool isRefreshingGemini;
+    private IReadOnlyList<AiModelInfo> openAiModels = [];
+    private IReadOnlyList<AiModelInfo> geminiModels = [];
+    private bool openAiTestSucceeded;
+    private bool geminiTestSucceeded;
+    private string? openAiTestMessage;
+    private string? geminiTestMessage;
     private bool polygonTestSucceeded;
     private string? polygonTestMessage;
     private bool saveSucceeded;
@@ -160,6 +197,14 @@ else
             snapshot = await SettingsService.LoadAsync();
             openAiDefaultModel = snapshot.OpenAiDefaultModel;
             geminiDefaultModel = snapshot.GeminiDefaultModel;
+            if (snapshot.HasOpenAiApiKey)
+            {
+                openAiModels = await ModelCatalog.GetModelsAsync(AiProviderKind.OpenAI, refresh: false);
+            }
+            if (snapshot.HasGeminiApiKey)
+            {
+                geminiModels = await ModelCatalog.GetModelsAsync(AiProviderKind.Gemini, refresh: false);
+            }
         }
         catch (Exception)
         {
@@ -242,6 +287,72 @@ else
         {
             isTestingPolygon = false;
             isBusy = false;
+        }
+    }
+
+    private async Task RefreshModelsAsync(AiProviderKind provider)
+    {
+        isBusy = true;
+        isRefreshingOpenAi = provider == AiProviderKind.OpenAI;
+        isRefreshingGemini = provider == AiProviderKind.Gemini;
+        try
+        {
+            var models = await ModelCatalog.GetModelsAsync(provider, refresh: true);
+            if (provider == AiProviderKind.OpenAI)
+            {
+                openAiModels = models;
+                openAiTestSucceeded = true;
+                openAiTestMessage = $"Đã tải {models.Count} model chat từ OpenAI.";
+            }
+            else
+            {
+                geminiModels = models;
+                geminiTestSucceeded = true;
+                geminiTestMessage = $"Đã tải {models.Count} model chat từ Gemini.";
+            }
+        }
+        catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
+        {
+            SetAiTestResult(provider, false, exception.Message);
+        }
+        finally
+        {
+            isRefreshingOpenAi = false;
+            isRefreshingGemini = false;
+            isBusy = false;
+        }
+    }
+
+    private async Task TestAiAsync(AiProviderKind provider)
+    {
+        isBusy = true;
+        try
+        {
+            var result = await ModelCatalog.TestConnectionAsync(provider);
+            SetAiTestResult(provider, result.Succeeded,
+                $"{result.Message} ({result.Duration.TotalMilliseconds:N0} ms)");
+        }
+        catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
+        {
+            SetAiTestResult(provider, false, exception.Message);
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void SetAiTestResult(AiProviderKind provider, bool succeeded, string message)
+    {
+        if (provider == AiProviderKind.OpenAI)
+        {
+            openAiTestSucceeded = succeeded;
+            openAiTestMessage = message;
+        }
+        else
+        {
+            geminiTestSucceeded = succeeded;
+            geminiTestMessage = message;
         }
     }
 }

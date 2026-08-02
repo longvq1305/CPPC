@@ -30,3 +30,11 @@
 - Phase 2 performed one live, read-only Polygon credential test and one exact-name
   `problems.list` availability check through the UI. Both succeeded. No Polygon
   problem was created or modified, and no credential value was printed or logged.
+- The Gemini Interactions beta endpoint returned HTTP 404 in the credentialed smoke
+  test. Current official documentation marks `/v1/interactions` stable, so the client
+  uses that endpoint; `gemini-3.6-flash` then streamed successfully. Older
+  `gemini-2.5-flash` attempts returned 404 and are retained as honest failed chat
+  records only in the temporary acceptance project.
+- OpenAI credential/model discovery succeeded, but the live Responses request was
+  rejected for insufficient quota. No successful OpenAI generation is claimed;
+  mock SSE coverage verifies request construction and stream parsing.

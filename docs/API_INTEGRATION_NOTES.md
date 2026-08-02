@@ -26,8 +26,11 @@ Official sources:
 - The Interactions API is generally available as of June 2026 and is the recommended
   API for new projects. The original `generateContent` API is documented as legacy
   but supported.
-- REST interactions use `POST /v1beta/interactions` with `x-goog-api-key`. The app
+- REST interactions use the stable `POST /v1/interactions` endpoint with
+  `x-goog-api-key`. The app
   uses `store=false` because local provider-neutral history is the source of truth.
+- A live smoke test confirmed `gemini-3.6-flash` on the stable endpoint. Model IDs
+  remain dynamic because a listed model can still be unavailable for Interactions.
 - Streaming is SSE with interaction and step lifecycle events. Function-call argument
   deltas are accumulated until the step finishes; unknown events are ignored safely.
 - Model discovery uses the official models endpoint and preserves manual model IDs.

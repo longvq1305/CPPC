@@ -101,7 +101,7 @@ through `IDbContextFactory`.
 2. **General Info and Polygon read-only — complete (2026-08-02)**
    - Exact five fields, current official validation, autosave, connection test,
      signed `problems.list`, duplicate-name gate without remote creation.
-3. **AI workspace**
+3. **AI workspace — complete (2026-08-02)**
    - Provider abstraction, real OpenAI Responses and Gemini Interactions clients,
      model discovery/cache, SSE streaming, normalized persistent conversation,
      attachment validation/storage, provider switching confirmation.
@@ -134,6 +134,15 @@ never calls `problem.create`. Polygon signing and response handling have unit/mo
 HTTP coverage. The saved real Polygon credential was tested successfully through the
 Settings UI, and a temporary local project passed the read-only availability flow;
 the temporary project was removed afterward.
+
+Phase 3 verification: Settings discovered 67 OpenAI and 25 Gemini chat-capable
+models through the saved credentials. Both provider model-list connection tests
+succeeded. Gemini `v1/interactions` produced and persisted a real streamed response
+with `gemini-3.6-flash`, including a confirmed provider switch in the same local
+conversation. OpenAI Responses reached the authenticated API but the account
+returned `insufficient_quota`; the UI persisted the response as `Failed` without
+losing the user message. OpenAI streaming behavior remains covered by mock SSE tests
+and is not represented as a successful live generation.
 
 Each phase ends with formatting, a Release build, relevant tests, a plan status
 update, and a separate commit. Full Release build and the complete test suite are

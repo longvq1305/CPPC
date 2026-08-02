@@ -28,10 +28,15 @@ public static class ServiceCollectionExtensions
         services.AddDbContextFactory<BuilderDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<IProjectRepository, ProjectRepository>();
         services.AddScoped<IApplicationSettingsRepository, ApplicationSettingsRepository>();
+        services.AddScoped<IConversationRepository, ConversationRepository>();
+        services.AddScoped<IModelCacheRepository, ModelCacheRepository>();
+        services.AddScoped<IAttachmentStore, AttachmentStore>();
         services.AddSingleton<ISecretStore, DpapiSecretStore>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IGeneralInfoService, GeneralInfoService>();
         services.AddScoped<ISettingsService, SettingsService>();
+        services.AddScoped<IModelCatalogService, ModelCatalogService>();
+        services.AddScoped<IAiWorkspaceService, AiWorkspaceService>();
         return services;
     }
 
