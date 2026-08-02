@@ -1,38 +1,55 @@
 # Polygon AI Builder
 
-Polygon AI Builder is a local-first Windows application for designing competitive
-programming problems and, in later implementation phases, generating content with
-AI, compiling GNU C++17 locally, and explicitly synchronizing a finished problem to
-Codeforces Polygon.
+Polygon AI Builder is a local-first Windows application for creating a new
+competitive-programming problem with OpenAI or Gemini, validating the local
+workflow with a pinned GNU C++17 toolchain, and explicitly synchronizing the
+finished problem to Codeforces Polygon.
 
-The current repository contains the completed **Phase 1 foundation**: the layered
-.NET 10 solution, Blazor Interactive Server shell, SQLite persistence and migration,
-project dashboard, five-step wizard shell, Settings UI, and per-user DPAPI-encrypted
-credential storage. Provider calls, compiler execution, and Polygon writes are not
-enabled yet; their controls are deliberately unavailable instead of reporting fake
-success.
+Version 1.0 implements the full five-step workflow:
+
+1. General Info and a read-only Polygon name check.
+2. One provider-neutral AI conversation per local problem.
+3. A versioned five-field English statement with local LaTeX preview.
+4. Editable/versioned `solution.cpp` and `generate.cpp`, compile diagnostics, and
+   a real `test_id=1` local sample smoke test.
+5. Checker/test configuration, deterministic plus AI Self-Audit, resumable explicit
+   Polygon sync, statement render/caution checks, commit, and verified standard
+   package polling.
+
+The app never auto-syncs. It does not add validators, brute-force/wrong solutions,
+run all 100 tests locally, or download Polygon packages.
 
 ## Prerequisites
 
-- Windows x64
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- Windows 11 x64
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) for source builds
+- OpenAI, Gemini, and Polygon credentials entered only through Settings
 
-No API credential is needed for the foundation. OpenAI, Gemini, and Polygon secrets
-will be entered through Settings when their integration phases are implemented.
+Acquire the pinned compiler and testlib/checker sources once:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/acquire-toolchain.ps1
+powershell -ExecutionPolicy Bypass -File scripts/verify-toolchain.ps1
+```
+
+The compiler archive version and SHA-256, testlib revision, and source checksums are
+recorded in `toolchain/manifest.json`. Downloaded compiler binaries are intentionally
+excluded from Git.
 
 ## Run locally
 
 ```powershell
-dotnet tool restore
-dotnet restore
 dotnet run --project src/PolygonAiBuilder.Web
 ```
 
-After the loopback health check succeeds, the application opens
-`http://127.0.0.1:5187` in the default browser. The server is intentionally bound
-to loopback only.
-Runtime files are created under `data/`, `projects/`, and `logs/`; these directories
-are excluded from Git.
+The server listens only on `http://127.0.0.1:5187`. After `/health` succeeds, the
+application asks Windows to open that URL in the default browser. If browser launch
+is blocked by Windows policy, open the URL manually while the command remains
+running.
+
+Runtime files are stored under `data/`, `projects/`, and `logs/`. Credentials are
+outside SQLite in `data/secrets.local.json`, encrypted with Windows DPAPI
+`CurrentUser`; plaintext keys are not written to logs or application data.
 
 ## Build and test
 
@@ -42,31 +59,20 @@ dotnet build PolygonAiBuilder.slnx -c Release
 dotnet test PolygonAiBuilder.slnx -c Release --no-build
 ```
 
-The tests cover domain rules, settings behavior, SQLite persistence and migrations,
-DPAPI encryption, and a hosted application smoke path. Live external integration
-tests will remain opt-in and must skip safely when credentials are absent.
+Automated external-integration tests use mock HTTP handlers. A real Polygon write is
+not part of the automated suite because sync requires a deliberate user action.
 
-## Foundation workflow
+## Publish Windows x64
 
-1. Create a local project from the dashboard using its future Polygon internal name.
-2. Open the project to see the five-step shell; reopening resumes the saved screen.
-3. Use Settings to store credentials. Existing secrets are shown only as masked
-   state and are preserved unless explicitly replaced or cleared.
-4. Delete a local project from the dashboard when it is no longer needed. This has
-   no effect on Polygon.
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/publish-win-x64.ps1
+```
 
-The General Info fields currently show persisted defaults. Validation, autosave, and
-the read-only Polygon duplicate-name check belong to Phase 2.
+The script verifies the pinned toolchain, runs the Release build and full suite,
+publishes a self-contained `win-x64` distribution, copies compiler/testlib/checker
+licenses and assets, and verifies the compiler again inside
+`artifacts/publish/win-x64`.
 
-## Data and credentials
-
-- SQLite stores projects, workflow state, versions, messages, test configuration,
-  sync journals, and non-secret preferences.
-- Credentials are kept outside SQLite in an atomic encrypted file protected with
-  Windows DPAPI `CurrentUser` and a current-user-only ACL.
-- The UI never reads a secret back into a normal view model; it receives only a
-  configured/not-configured flag and a mask.
-
-See [the implementation plan](IMPLEMENTATION_PLAN.md),
-[architecture notes](docs/ARCHITECTURE.md), [security notes](docs/SECURITY.md), and
-[API research](docs/API_INTEGRATION_NOTES.md) for the remaining roadmap and design.
+See [architecture notes](docs/ARCHITECTURE.md),
+[security notes](docs/SECURITY.md), [API research](docs/API_INTEGRATION_NOTES.md),
+and [implementation notes](IMPLEMENTATION_NOTES.md).

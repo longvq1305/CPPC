@@ -48,6 +48,85 @@ public sealed class PolygonClientTests
         Assert.Contains("[REDACTED]", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task WriteMethods_UseCurrentOfficialMethodNamesAndCpp17Parameters()
+    {
+        var requests = new List<(string Method, Dictionary<string, string> Form)>();
+        var handler = new DelegateHandler(async request =>
+        {
+            var body = await request.Content!.ReadAsStringAsync();
+            requests.Add((request.RequestUri!.Segments.Last(), ParseForm(body)));
+            return request.RequestUri.Segments.Last() == "problem.create"
+                ? JsonResponse("""{"status":"OK","result":{"id":77,"name":"new-problem","owner":"owner","deleted":false}}""")
+                : JsonResponse("""{"status":"OK","result":{}}""");
+        });
+        var client = CreateClient(handler);
+
+        var problem = await client.CreateProblemAsync("new-problem");
+        await client.UpdateInfoAsync(problem.Id, "stdin", "stdout", 1000, 256);
+        await client.SaveStatementAsync(problem.Id, new("english", "Title", "Legend", "Input", "Output", "Note"));
+        await client.SaveSolutionAsync(problem.Id, "int main(){}\n");
+        await client.SaveSourceFileAsync(problem.Id, "gen.cpp", "int main(){}\n", "cpp.g++17");
+        await client.SetCheckerAsync(problem.Id, "ncmp.cpp");
+        await client.SaveScriptAsync(problem.Id, "tests", "gen 1 > $");
+        await client.EnablePointsAsync(problem.Id, true);
+
+        Assert.Equal(77, problem.Id);
+        Assert.Equal([
+            "problem.create", "problem.updateInfo", "problem.saveStatement", "problem.saveSolution",
+            "problem.saveFile", "problem.setChecker", "problem.saveScript", "problem.enablePoints"
+        ], requests.Select(item => item.Method));
+        Assert.Equal("cpp.g++17", requests.Single(item => item.Method == "problem.saveSolution").Form["sourceType"]);
+        Assert.Equal("MA", requests.Single(item => item.Method == "problem.saveSolution").Form["tag"]);
+        Assert.Equal("gen.cpp", requests.Single(item => item.Method == "problem.saveFile").Form["name"]);
+        Assert.Equal("false", requests.Single(item => item.Method == "problem.updateInfo").Form["interactive"]);
+        Assert.DoesNotContain(requests, item => item.Method.Contains("validator", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task SaveTestMetadata_SetsEveryPointAndOnlyTestOneStatementSample()
+    {
+        var forms = new List<Dictionary<string, string>>();
+        var handler = new DelegateHandler(async request =>
+        {
+            forms.Add(ParseForm(await request.Content!.ReadAsStringAsync()));
+            return JsonResponse("""{"status":"OK","result":{}}""");
+        });
+        var client = CreateClient(handler);
+
+        await client.SaveTestMetadataAsync(77, new("tests", 3, 1.5m, 1, true, "1 2\n", "3\n"));
+
+        Assert.Equal(3, forms.Count);
+        Assert.Equal(["1", "2", "3"], forms.Select(item => item["testIndex"]));
+        Assert.All(forms, form => Assert.Equal("1.5", form["testPoints"]));
+        Assert.Equal("1 2\n", forms[0]["testInputForStatements"]);
+        Assert.Equal("true", forms[0]["verifyInputOutputForStatements"]);
+        Assert.DoesNotContain("testInputForStatements", forms[1].Keys);
+    }
+
+    [Fact]
+    public async Task RenderPackagesAndCautions_ParseStructuredResults()
+    {
+        var handler = new DelegateHandler(request => Task.FromResult(request.RequestUri!.Segments.Last() switch
+        {
+            "problem.renderStatements" => JsonResponse("""{"status":"OK","result":{"revision":4,"renderingTimeSeconds":12,"statements":[{"language":"english","html":{"status":"OK","sha256":"a","sizeBytes":10},"pdf":{"status":"OK","sha256":"b","sizeBytes":20}}],"tutorials":[]}}"""),
+            "problem.packages" => JsonResponse("""{"status":"OK","result":[{"id":9,"revision":4,"creationTimeSeconds":12,"state":"READY","comment":"ok","type":"standard"}]}"""),
+            "problem.cautions" => JsonResponse("""{"status":"OK","result":{"common":[{"type":"NO_TAGS","severity":"SOFT","category":"COMMON","message":"No tags","parameters":[]}],"statement":[],"structure":[],"issues":[],"packageReadinessIssues":[],"latestPackageWarnings":[],"ai":{"disabled":true,"statements":[]}}}"""),
+            _ => throw new InvalidOperationException(),
+        }));
+        var client = CreateClient(handler);
+
+        var render = await client.RenderStatementsAsync(77, true);
+        var packages = await client.ListPackagesAsync(77);
+        var cautions = await client.GetCautionsAsync(77);
+
+        Assert.True(render.Succeeded);
+        Assert.Equal(4, render.Revision);
+        Assert.Equal("READY", Assert.Single(packages).State);
+        Assert.False(cautions.HasBlockingIssues);
+        Assert.Equal("NO_TAGS", Assert.Single(cautions.Cautions).Type);
+    }
+
     private static PolygonClient CreateClient(HttpMessageHandler handler)
     {
         var httpClient = new HttpClient(handler)

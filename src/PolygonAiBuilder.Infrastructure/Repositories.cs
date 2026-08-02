@@ -35,7 +35,28 @@ public sealed class ProjectRepository(IDbContextFactory<BuilderDbContext> contex
     public async Task UpdateAsync(ProblemProject project, CancellationToken cancellationToken)
     {
         await using var db = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var existingInfo = await db.GeneralInfos.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.ProblemProjectId == project.Id, cancellationToken);
+        var codeRelevantInfoChanged = existingInfo is not null
+            && (!string.Equals(existingInfo.InputFile, project.GeneralInfo.InputFile, StringComparison.Ordinal)
+                || !string.Equals(existingInfo.OutputFile, project.GeneralInfo.OutputFile, StringComparison.Ordinal)
+                || existingInfo.TimeLimitMs != project.GeneralInfo.TimeLimitMs
+                || existingInfo.MemoryLimitMb != project.GeneralInfo.MemoryLimitMb);
         db.ProblemProjects.Update(project);
+        if (codeRelevantInfoChanged)
+        {
+            await db.CodeArtifacts.Where(item => item.ProblemProjectId == project.Id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.IsStale, true)
+                    .SetProperty(item => item.LastCompileStatus, CompileStatus.NotCompiled)
+                    .SetProperty(item => item.LastCompileOutput, string.Empty), cancellationToken);
+            await db.Statements.Where(item => item.ProblemProjectId == project.Id)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(item => item.IsCodeStale, true), cancellationToken);
+            await db.Samples.Where(item => item.ProblemProjectId == project.Id)
+                .ExecuteUpdateAsync(setters => setters
+                    .SetProperty(item => item.InputIsStale, true)
+                    .SetProperty(item => item.OutputIsStale, true), cancellationToken);
+        }
         await db.SaveChangesAsync(cancellationToken);
     }
 

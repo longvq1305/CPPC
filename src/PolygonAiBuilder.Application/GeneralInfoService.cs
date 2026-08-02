@@ -30,6 +30,12 @@ public sealed class GeneralInfoService(
         }
 
         var normalizedName = draft.InternalName.Trim();
+        if (project.PolygonProblemId is not null
+            && !string.Equals(project.InternalName, normalizedName, StringComparison.Ordinal))
+        {
+            return GeneralInfoSaveResult.Invalid(
+                [new ValidationIssue("InternalName", "Dự án đã liên kết Polygon problem nên không thể đổi internal name.")]);
+        }
         var projects = await repository.ListAsync(cancellationToken);
         if (projects.Any(candidate =>
                 candidate.Id != projectId

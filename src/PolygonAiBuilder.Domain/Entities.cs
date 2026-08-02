@@ -97,6 +97,10 @@ public sealed class ProblemProject
         var normalizedName = internalName.Trim();
         var normalizedInput = inputFile.Trim();
         var normalizedOutput = outputFile.Trim();
+        var remoteInfoChanged = !string.Equals(GeneralInfo.InputFile, normalizedInput, StringComparison.Ordinal)
+            || !string.Equals(GeneralInfo.OutputFile, normalizedOutput, StringComparison.Ordinal)
+            || GeneralInfo.TimeLimitMs != timeLimitMs
+            || GeneralInfo.MemoryLimitMb != memoryLimitMb;
         if (!string.Equals(InternalName, normalizedName, StringComparison.Ordinal))
         {
             InternalName = normalizedName;
@@ -104,6 +108,7 @@ public sealed class ProblemProject
         }
 
         GeneralInfo.Update(normalizedInput, normalizedOutput, timeLimitMs, memoryLimitMb);
+        if (remoteInfoChanged) InvalidateSync(PolygonSyncPhase.ProblemCreated, now);
         UpdatedAt = now;
     }
 
@@ -127,7 +132,9 @@ public sealed class ProblemProject
 
     public void AdvanceSync(PolygonSyncPhase phase, DateTimeOffset now)
     {
-        if (phase < PolygonSyncPhase)
+        if (phase < PolygonSyncPhase
+            && !(PolygonSyncPhase == PolygonSyncPhase.PackageFailed
+                 && phase is PolygonSyncPhase.Committed or PolygonSyncPhase.PackageBuildStarted or PolygonSyncPhase.PackageReady))
         {
             throw new InvalidOperationException("Polygon synchronization cannot move backwards without explicit invalidation.");
         }
@@ -140,6 +147,30 @@ public sealed class ProblemProject
             _ => ProjectStatus.Syncing,
         };
         UpdatedAt = now;
+    }
+
+    public void InvalidateSync(PolygonSyncPhase lastValidPhase, DateTimeOffset now)
+    {
+        if (PolygonProblemId is null || PolygonSyncPhase <= lastValidPhase) return;
+        PolygonSyncPhase = lastValidPhase;
+        Status = ProjectStatus.Syncing;
+        UpdatedAt = now;
+    }
+
+    public void MarkPackageReady(int revision, DateTimeOffset now)
+    {
+        if (revision <= 0) throw new ArgumentOutOfRangeException(nameof(revision));
+        PolygonRevision = revision;
+        AdvanceSync(PolygonSyncPhase.PackageReady, now);
+    }
+
+    public void MarkSyncFailed(DateTimeOffset now)
+    {
+        if (PolygonSyncPhase != PolygonSyncPhase.PackageReady)
+        {
+            Status = ProjectStatus.SyncFailed;
+            UpdatedAt = now;
+        }
     }
 }
 

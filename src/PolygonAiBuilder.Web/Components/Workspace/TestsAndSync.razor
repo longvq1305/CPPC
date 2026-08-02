@@ -1,0 +1,405 @@
+@inject ITestConfigurationService TestConfigurationService
+@inject ILocalSampleService LocalSampleService
+@inject ISelfAuditService SelfAuditService
+@inject IPolygonSyncService PolygonSyncService
+@inject IProjectService ProjectService
+@inject IStatementService StatementService
+
+<div class="tests-sync-workspace">
+    @if (isLoading)
+    {
+        <div class="loading-card"><span class="spinner-border spinner-border-sm"></span> Đang tải test configuration…</div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(notice))
+        {
+            <div class="notice @(noticeIsError ? "notice-error" : "notice-success")" role="status">@notice</div>
+        }
+
+        <div class="tests-sync-grid">
+            <section class="test-config-pane">
+                <div class="pane-heading">
+                    <div><span class="eyebrow">Polygon testset</span><h3>Checker & test settings</h3></div>
+                    <button class="btn btn-secondary" @onclick="SaveConfigurationAsync" disabled="@isBusy">Lưu cấu hình</button>
+                </div>
+                <div class="test-settings-grid">
+                    <label>Testset name
+                        <input class="form-control" maxlength="64" @bind="testsetName" disabled="@isBusy" />
+                    </label>
+                    <label>Checker
+                        <select class="form-select" @bind="checker" disabled="@isBusy">
+                            <option value="ncmp.cpp">ncmp.cpp · numeric tokens</option>
+                            <option value="wcmp.cpp">wcmp.cpp · whitespace tokens</option>
+                        </select>
+                    </label>
+                    <label>Number of tests
+                        <input class="form-control" type="number" min="1" max="1000" @bind="testCount" disabled="@isBusy" />
+                    </label>
+                    <label>Score per test
+                        <input class="form-control" type="number" min="0" step="0.01" @bind="scorePerTest" disabled="@isBusy" />
+                    </label>
+                    <label class="form-check test-check">
+                        <input class="form-check-input" type="checkbox" checked disabled />
+                        <span>Points enabled (cố định)</span>
+                    </label>
+                    <label class="form-check test-check">
+                        <input class="form-check-input" type="checkbox" @bind="useSampleInStatement" disabled="@isBusy" />
+                        <span>Dùng Test 1 trong statement</span>
+                    </label>
+                </div>
+
+                @if (configuration is not null && testCount != configuration.TestCount)
+                {
+                    <div class="notice notice-info">
+                        Đổi test count sẽ làm generator và Sample 1 stale. Sau khi lưu, hãy tạo lại code bằng AI để bao phủ range mới.
+                    </div>
+                }
+
+                <div class="script-heading">
+                    <label for="test-script">Freemarker test script</label>
+                    <button class="btn btn-ghost" @onclick="RegenerateScriptAsync" disabled="@isBusy">Regenerate theo test count</button>
+                </div>
+                <textarea id="test-script" class="form-control test-script-editor" spellcheck="false" @bind="script" disabled="@isBusy"></textarea>
+                <small>Remote generator được map cố định từ <code>generate.cpp</code> local thành <code>gen.cpp</code>; script phải gọi <code>gen</code>.</small>
+
+                <label class="commit-label" for="commit-message">Commit message (tùy chọn)</label>
+                <input id="commit-message" class="form-control" maxlength="500" @bind="commitMessage" disabled="@isBusy" />
+            </section>
+
+            <section class="sample-config-pane">
+                <div class="pane-heading">
+                    <div><span class="eyebrow">Test metadata</span><h3>Sample 1 input/output</h3></div>
+                    <span class="status-pill @SampleStatusClass">@SampleStatusText</span>
+                </div>
+                @if (sample is null)
+                {
+                    <div class="empty-test-sample">
+                        <p>Chưa có Sample 1. Quay lại bước Code, compile hai file và chạy local sample.</p>
+                    </div>
+                }
+                else
+                {
+                    @if (sample.WasManuallyEdited)
+                    {
+                        <div class="notice notice-info">Sample hiển thị đã được sửa thủ công. Self-Audit sẽ cảnh báo để bạn đối chiếu với kết quả chạy thực tế.</div>
+                    }
+                    <label>Sample input
+                        <textarea class="form-control sample-editor" spellcheck="false" @bind="sampleInput" disabled="@isBusy"></textarea>
+                    </label>
+                    <label>Sample output
+                        <textarea class="form-control sample-editor" spellcheck="false" @bind="sampleOutput" disabled="@isBusy"></textarea>
+                    </label>
+                    <button class="btn btn-secondary" @onclick="SaveSampleAsync" disabled="@isBusy">Lưu sample đã chỉnh</button>
+                }
+            </section>
+        </div>
+
+        <section class="self-audit-card">
+            <div class="pane-heading">
+                <div><span class="eyebrow">Preflight</span><h3>Self-Audit</h3></div>
+                <button class="btn btn-primary app-primary" @onclick="RunAuditAsync" disabled="@isBusy">
+                    @(isAuditing ? "Đang audit…" : "Chạy Self-Audit")
+                </button>
+            </div>
+            @if (audit is null)
+            {
+                <p>Audit kết hợp kiểm tra local quyết định với semantic review từ provider/model đang chọn. Kết quả không bao giờ mặc định PASSED.</p>
+            }
+            else
+            {
+                <div class="audit-status @(audit.Passed ? "passed" : "failed")">Status: @audit.Status</div>
+                @if (audit.Issues.Count == 0)
+                {
+                    <p>Không phát hiện lỗi trong các check đã cấu hình.</p>
+                }
+                else
+                {
+                    <ul class="audit-issues">
+                        @foreach (var issue in audit.Issues)
+                        {
+                            <li class="@issue.Severity.ToString().ToLowerInvariant()">
+                                <strong>@issue.Check · @issue.Severity</strong><span>@issue.Message</span>
+                            </li>
+                        }
+                    </ul>
+                }
+            }
+        </section>
+
+        <section class="sync-review-card">
+            <div class="pane-heading">
+                <div><span class="eyebrow">Explicit remote action</span><h3>Đồng bộ lên Polygon</h3></div>
+                <span class="status-pill @SyncStatusClass">@SyncStatusText</span>
+            </div>
+            <p>Nút sync sẽ chỉ được bật sau khi Self-Audit PASSED. Không có auto-sync và ứng dụng không tải Polygon package về máy.</p>
+            @if (lastSyncProgress is not null)
+            {
+                <div class="sync-progress-line @(lastSyncProgress.Status == SyncOperationStatus.Failed ? "failed" : "")">
+                    <strong>@lastSyncProgress.Phase · @lastSyncProgress.Status</strong>
+                    <span>@lastSyncProgress.Message</span>
+                </div>
+            }
+            @if (lastCautions is not null && (lastCautions.Cautions.Count > 0 || lastCautions.PackageReadinessIssues.Count > 0))
+            {
+                <details class="polygon-cautions" open>
+                    <summary>Polygon cautions</summary>
+                    <ul>
+                        @foreach (var caution in lastCautions.Cautions)
+                        {
+                            <li><strong>@caution.Severity · @caution.Type</strong> @caution.Message</li>
+                        }
+                        @foreach (var issue in lastCautions.PackageReadinessIssues)
+                        {
+                            <li><strong>BLOCKING · @issue.Type</strong> @issue.Message</li>
+                        }
+                    </ul>
+                </details>
+            }
+            @if (lastPackage is not null)
+            {
+                <p class="package-result">Package @lastPackage.Id · revision @lastPackage.Revision · @lastPackage.State · @lastPackage.Comment</p>
+            }
+            <button class="btn btn-primary app-primary" @onclick="OpenSyncReview" disabled="@(isBusy || audit?.Passed != true)">
+                @(isSyncing ? "Đang đồng bộ…" : syncSnapshot?.ProblemId is null ? "Đồng bộ lên Polygon" : "Tiếp tục đồng bộ")
+            </button>
+
+            @if (syncSnapshot?.Operations.Count > 0)
+            {
+                <details class="sync-history">
+                    <summary>Operation log (@syncSnapshot.Operations.Count)</summary>
+                    @foreach (var operation in syncSnapshot.Operations.Take(20))
+                    {
+                        <div class="history-entry">
+                            <div><strong>@operation.Phase · @operation.Status</strong><small>@operation.Endpoint · retry @operation.RetryCount · @operation.StartedAt.ToLocalTime().ToString("dd/MM HH:mm:ss")</small></div>
+                            <span>@(operation.ErrorMessage ?? operation.RemoteResultSummary)</span>
+                        </div>
+                    }
+                </details>
+            }
+        </section>
+
+        @if (showSyncReview)
+        {
+            <div class="confirmation-backdrop" role="presentation">
+                <section class="confirmation-dialog sync-confirmation" role="dialog" aria-modal="true" aria-labelledby="sync-review-title">
+                    <span class="eyebrow">Remote write review</span>
+                    <h3 id="sync-review-title">Xác nhận đồng bộ lên Polygon</h3>
+                    <dl class="status-list">
+                        <div><dt>Internal name</dt><dd>@project?.InternalName</dd></div>
+                        <div><dt>Title</dt><dd>@statement?.Content.Title</dd></div>
+                        <div><dt>Limits</dt><dd>@project?.TimeLimitMs ms · @project?.MemoryLimitMb MB</dd></div>
+                        <div><dt>Checker</dt><dd>@checker</dd></div>
+                        <div><dt>Tests/points</dt><dd>@testCount × @scorePerTest</dd></div>
+                        <div><dt>Provider/model</dt><dd>@project?.SelectedProvider / @project?.SelectedModel</dd></div>
+                        <div><dt>Commit message</dt><dd>@(string.IsNullOrWhiteSpace(commitMessage) ? "(bỏ parameter message)" : commitMessage)</dd></div>
+                        <div><dt>Resume problem ID</dt><dd>@(syncSnapshot?.ProblemId?.ToString() ?? "Sẽ tạo problem mới")</dd></div>
+                    </dl>
+                    <p>Đây là hành động ghi remote rõ ràng. Sau khi problem.create thành công, mọi lỗi sau đó sẽ giữ problem ID và nút chuyển thành Tiếp tục đồng bộ.</p>
+                    <div class="button-row">
+                        <button class="btn btn-ghost" @onclick="() => showSyncReview = false">Hủy</button>
+                        <button class="btn btn-primary app-primary" @onclick="RunSyncAsync">Xác nhận đồng bộ</button>
+                    </div>
+                </section>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ProjectId { get; set; }
+
+    private TestConfigurationSnapshot? configuration;
+    private LocalSampleSnapshot? sample;
+    private SelfAuditResult? audit;
+    private PolygonSyncSnapshot? syncSnapshot;
+    private PolygonSyncProgress? lastSyncProgress;
+    private PolygonCautions? lastCautions;
+    private PolygonPackage? lastPackage;
+    private ProjectDetails? project;
+    private StatementSnapshot? statement;
+    private string testsetName = "tests";
+    private int testCount = 100;
+    private decimal scorePerTest = 1;
+    private string checker = "ncmp.cpp";
+    private string script = string.Empty;
+    private bool useSampleInStatement = true;
+    private string commitMessage = string.Empty;
+    private string sampleInput = string.Empty;
+    private string sampleOutput = string.Empty;
+    private string? notice;
+    private bool noticeIsError;
+    private bool isLoading = true;
+    private bool isBusy;
+    private bool isAuditing;
+    private bool isSyncing;
+    private bool showSyncReview;
+    private Guid loadedProjectId;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedProjectId == ProjectId) return;
+        loadedProjectId = ProjectId;
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        configuration = await TestConfigurationService.LoadAsync(ProjectId);
+        sample = await LocalSampleService.LoadAsync(ProjectId);
+        syncSnapshot = await PolygonSyncService.LoadAsync(ProjectId);
+        project = await ProjectService.GetAsync(ProjectId);
+        statement = await StatementService.LoadAsync(ProjectId);
+        if (configuration is not null)
+        {
+            testsetName = configuration.TestsetName;
+            testCount = configuration.TestCount;
+            scorePerTest = configuration.ScorePerTest;
+            checker = configuration.Checker;
+            script = configuration.Script;
+            useSampleInStatement = configuration.UseSampleInStatement;
+            commitMessage = configuration.CommitMessage;
+        }
+        sampleInput = sample?.Input ?? string.Empty;
+        sampleOutput = sample?.Output ?? string.Empty;
+        isLoading = false;
+    }
+
+    private TestConfigurationUpdate Update() =>
+        new(testsetName, testCount, scorePerTest, checker, script, useSampleInStatement, commitMessage);
+
+    private async Task SaveConfigurationAsync()
+    {
+        isBusy = true;
+        try
+        {
+            configuration = await TestConfigurationService.SaveAsync(ProjectId, Update());
+            notice = "Đã lưu test configuration local.";
+            noticeIsError = false;
+            audit = null;
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task RegenerateScriptAsync()
+    {
+        isBusy = true;
+        try
+        {
+            configuration = await TestConfigurationService.RegenerateScriptAsync(ProjectId, Update());
+            script = configuration.Script;
+            notice = $"Đã regenerate script cho 1..{testCount}.";
+            noticeIsError = false;
+            audit = null;
+        }
+        catch (ArgumentException exception)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task SaveSampleAsync()
+    {
+        isBusy = true;
+        try
+        {
+            sample = await LocalSampleService.SaveManualAsync(ProjectId, sampleInput, sampleOutput);
+            notice = "Đã lưu Sample 1 đã chỉnh; provenance local-run vẫn được giữ để Self-Audit cảnh báo khác biệt.";
+            noticeIsError = false;
+            audit = null;
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task RunAuditAsync()
+    {
+        isBusy = isAuditing = true;
+        notice = null;
+        try
+        {
+            configuration = await TestConfigurationService.SaveAsync(ProjectId, Update());
+            audit = await SelfAuditService.RunAsync(ProjectId);
+            notice = $"Self-Audit hoàn tất: {audit.Status}.";
+            noticeIsError = !audit.Passed;
+        }
+        finally { isBusy = isAuditing = false; }
+    }
+
+    private void OpenSyncReview()
+    {
+        if (audit?.Passed == true) showSyncReview = true;
+    }
+
+    private async Task RunSyncAsync()
+    {
+        showSyncReview = false;
+        isBusy = isSyncing = true;
+        notice = "Đang đồng bộ; mỗi phase thành công được ghi local ngay để có thể resume.";
+        noticeIsError = false;
+        try
+        {
+            await foreach (var progress in PolygonSyncService.SyncAsync(ProjectId))
+            {
+                lastSyncProgress = progress;
+                syncSnapshot = progress.Snapshot;
+                if (progress.Cautions is not null) lastCautions = progress.Cautions;
+                if (progress.Package is not null) lastPackage = progress.Package;
+                notice = progress.Message;
+                noticeIsError = progress.Status == SyncOperationStatus.Failed;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            notice = "Đã hủy sync. Phase đã hoàn tất vẫn được giữ để resume.";
+            noticeIsError = true;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IntegrationConfigurationException or ExternalServiceException or IOException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally
+        {
+            syncSnapshot = await PolygonSyncService.LoadAsync(ProjectId);
+            isBusy = isSyncing = false;
+        }
+    }
+
+    private string SampleStatusClass => sample switch
+    {
+        null => "neutral",
+        { InputIsStale: true } or { OutputIsStale: true } => "warning",
+        _ => "success",
+    };
+    private string SampleStatusText => sample switch
+    {
+        null => "Chưa có",
+        { InputIsStale: true } or { OutputIsStale: true } => "Stale",
+        _ => "Local run OK",
+    };
+
+    private string SyncStatusClass => syncSnapshot?.Phase switch
+    {
+        PolygonSyncPhase.PackageReady => "success",
+        PolygonSyncPhase.PackageFailed => "danger",
+        PolygonSyncPhase.NotCreated => "neutral",
+        _ when syncSnapshot?.Status == ProjectStatus.SyncFailed => "danger",
+        _ => "info",
+    };
+    private string SyncStatusText => syncSnapshot?.Phase switch
+    {
+        null or PolygonSyncPhase.NotCreated => "Chưa bắt đầu",
+        PolygonSyncPhase.PackageReady => "Package ready",
+        PolygonSyncPhase.PackageFailed => "Package failed",
+        _ => $"Resume · {syncSnapshot.Phase}",
+    };
+}

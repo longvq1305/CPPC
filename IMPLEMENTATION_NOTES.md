@@ -15,8 +15,10 @@
 - Large compiler binaries are intentionally acquired by a pinned release script and
   excluded from Git. The final publish verification must fail clearly if required
   toolchain assets are absent; it must not fabricate success.
-- Live OpenAI, Gemini, and Polygon tests remain opt-in and cannot be reported as
-  executed until the user supplies credentials through the application Settings UI.
+- Live external calls are never part of the automated suite. After the user supplied
+  credentials through Settings, read-only connection/model checks and provider
+  generation smoke tests were run through the application UI; remote Polygon writes
+  still require the product's explicit sync confirmation.
 - `SQLitePCLRaw.bundle_e_sqlite3` is pinned to 2.1.12 instead of accepting EF
   Core's older transitive version, avoiding the published vulnerability affecting
   2.1.11.
@@ -46,3 +48,26 @@
   ended with a network error; cancellation could briefly reload the still-Streaming
   row before the producer persisted its final status. The reader now awaits producer
   cleanup before returning, with a cancellation regression test.
+- The source content stored in SQLite is authoritative; `projects/<id>/code` is an
+  atomic disk mirror used by compilation and recovery/export. This intentionally
+  chooses one consistent source of truth while retaining both storage forms required
+  by the specification.
+- The pinned WinLibs GCC 16.1.0 / MinGW-w64 14.0.0 UCRT archive and pinned testlib
+  sources were acquired and checksum-verified. A real UI smoke run compiled both
+  GNU++17 artifacts, ran `generate.exe 1`, and confirmed sample input `1 2` produces
+  output `3`. The temporary acceptance project was deleted afterwards; the user's
+  project was not modified.
+- The final live code-generation retries received honest provider limits: Gemini
+  reported its free-tier request quota and OpenAI returned HTTP 429. No code was
+  persisted as AI-generated and no success is claimed for those limited requests;
+  structured-output parsing and workflow behavior remain covered by mock HTTP and
+  service tests.
+- Polygon write methods, resume journaling, rendering/caution gates, commit, and
+  verified standard-package polling are covered with mock clients and persistence
+  tests. No real Polygon problem was created or changed because the user did not
+  perform the explicit sync confirmation. Package resume stores the pre-build package
+  ID so an older READY package cannot be mistaken for the new build.
+- Daily local logging keeps 14 days, bounds entries, and redacts recognizable bearer,
+  OpenAI, Google, Polygon key/secret, and signature shapes. Diagnostics stores only
+  bounded non-secret connection results; Polygon server offset remains “unknown”
+  because the current official Polygon API does not expose server time on success.

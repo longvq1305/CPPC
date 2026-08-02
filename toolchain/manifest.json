@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "compiler": {
+    "name": "WinLibs GCC 16.1.0 + MinGW-w64 14.0.0 UCRT x86_64 POSIX SEH",
+    "archiveUrl": "https://github.com/brechtsanders/winlibs_mingw/releases/download/16.1.0posix-14.0.0-ucrt-r2/winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r2.zip",
+    "archiveFileName": "winlibs-x86_64-posix-seh-gcc-16.1.0-mingw-w64ucrt-14.0.0-r2.zip",
+    "sha256": "78EFF1E2E804B6A6320C713F084B8F820C662104A24CEA6A3BFCAB82032BDD60",
+    "archiveRoot": "mingw64"
+  },
+  "testlib": {
+    "revision": "1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd",
+    "files": [
+      {
+        "relativePath": "testlib/testlib.h",
+        "url": "https://raw.githubusercontent.com/MikeMirzayanov/testlib/1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd/testlib.h",
+        "sha256": "BB323E3C89285214966076E0D23D5A295C5F6126DA7FF198C1276DDB95ECB1A0"
+      },
+      {
+        "relativePath": "testlib/LICENSE",
+        "url": "https://raw.githubusercontent.com/MikeMirzayanov/testlib/1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd/LICENSE",
+        "sha256": "EDF4E4B144F24CC4D8070B7A18D700F9429E850F3353736DD628A0A3CACFF6C9"
+      },
+      {
+        "relativePath": "checkers/ncmp.cpp",
+        "url": "https://raw.githubusercontent.com/MikeMirzayanov/testlib/1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd/checkers/ncmp.cpp",
+        "sha256": "BA4C764DEF40F3A5687F5DB2143E48E983116E0676E2DA7566C9FEDCA1D23A2E"
+      },
+      {
+        "relativePath": "checkers/wcmp.cpp",
+        "url": "https://raw.githubusercontent.com/MikeMirzayanov/testlib/1e4e8a24c79c6bad3becbdb5a332ffc352b7d5dd/checkers/wcmp.cpp",
+        "sha256": "81B8C97B755FF7E6331C212A054AB7D1A2378CC65786A0439F78E379C60E9FEC"
+      }
+    ]
+  }
+}

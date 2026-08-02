@@ -16,7 +16,7 @@ public sealed class AiProviderTests
             Assert.Equal("Bearer test-openai", request.Headers.Authorization?.ToString());
             if (request.Method == HttpMethod.Get)
             {
-                return Json("""{"data":[{"id":"gpt-5.6"},{"id":"text-embedding-3-small"}]}""");
+                return Json("""{"data":[{"id":"gpt-5.6"},{"id":"text-embedding-3-small"},{"id":"omni-moderation-latest"},{"id":"gpt-3.5-turbo-instruct"}]}""");
             }
 
             Assert.Equal("/v1/responses", request.RequestUri?.AbsolutePath);

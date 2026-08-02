@@ -11,7 +11,7 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient<PolygonClient>(client =>
         {
             client.BaseAddress = new Uri("https://polygon.codeforces.com/api/", UriKind.Absolute);
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = TimeSpan.FromMinutes(5);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("PolygonAiBuilder/0.2");
         });
         services.AddScoped<IPolygonClient>(provider => provider.GetRequiredService<PolygonClient>());

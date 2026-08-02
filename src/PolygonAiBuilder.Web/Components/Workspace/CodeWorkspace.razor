@@ -1,0 +1,509 @@
+@inject ICodeGenerationService CodeGenerationService
+@inject ICodeCompileService CodeCompileService
+@inject ILocalSampleService LocalSampleService
+@inject IJSRuntime JavaScript
+@implements IDisposable
+
+<div class="code-workspace">
+    <div class="code-toolbar">
+        <div class="button-row compact-actions">
+            <button class="btn btn-ghost" @onclick="UndoEditorAsync" disabled="@isBusy">Undo</button>
+            <button class="btn btn-ghost" @onclick="RedoEditorAsync" disabled="@isBusy">Redo</button>
+            <button class="btn btn-ghost" @onclick="CopyAsync" disabled="@(isBusy || ActiveArtifact is null)">Copy</button>
+            <button class="btn btn-ghost" @onclick="ToggleHistory">Lịch sử</button>
+        </div>
+        <div class="button-row">
+            <button class="btn btn-secondary" @onclick="CompileBothAsync" disabled="@(isBusy || workspace?.HasBothArtifacts != true)">
+                @(isCompiling ? "Đang compile…" : "Compile cả hai")
+            </button>
+            <button class="btn btn-primary app-primary" @onclick="GenerateAsync" disabled="@isBusy">
+                @(isGenerating ? "AI đang tạo code…" : "Tạo code bằng AI")
+            </button>
+        </div>
+    </div>
+
+    <div class="notice notice-info code-security-note">
+        <strong>Cảnh báo chạy code:</strong> code C++ do AI tạo sẽ được compile/chạy cục bộ với giới hạn thời gian và output,
+        nhưng chưa phải sandbox bảo mật. Chỉ chạy code mà bạn đã xem xét.
+    </div>
+
+    @if (workspace?.HasStaleCode == true && !staleDismissed)
+    {
+        <div class="notice notice-error stale-code-notice" role="alert">
+            Statement đã đổi sau lần tạo code gần nhất. Nên tạo lại code trước khi compile hoặc sync.
+            <span class="button-row">
+                <button class="btn btn-secondary" @onclick="GenerateAsync" disabled="@isBusy" autofocus>Tạo lại</button>
+                <button class="btn btn-ghost" @onclick="() => staleDismissed = true" disabled="@isBusy">Giữ code hiện tại</button>
+            </span>
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(notice))
+    {
+        <div class="notice @(noticeIsError ? "notice-error" : "notice-success")" role="status">@notice</div>
+    }
+
+    @if (validationErrors.Count > 0)
+    {
+        <div class="notice notice-error" role="alert">
+            <strong>Code AI bị chặn bởi guardrail:</strong>
+            <ul>@foreach (var error in validationErrors) { <li>@error</li> }</ul>
+        </div>
+    }
+
+    @if (isLoading)
+    {
+        <div class="loading-card"><span class="spinner-border spinner-border-sm"></span> Đang tải code workspace…</div>
+    }
+    else
+    {
+        <div class="code-file-tabs" role="tablist" aria-label="C++ source files">
+            <button role="tab" aria-selected="@(activeType == CodeArtifactType.Solution)"
+                    class="@(activeType == CodeArtifactType.Solution ? "active" : "")"
+                    @onclick="() => SelectArtifactAsync(CodeArtifactType.Solution)">
+                solution.cpp @CompileBadge(workspace?.Solution)
+            </button>
+            <button role="tab" aria-selected="@(activeType == CodeArtifactType.Generator)"
+                    class="@(activeType == CodeArtifactType.Generator ? "active" : "")"
+                    @onclick="() => SelectArtifactAsync(CodeArtifactType.Generator)">
+                generate.cpp @CompileBadge(workspace?.Generator)
+            </button>
+        </div>
+
+        <div class="code-editor-layout">
+            <section class="code-editor-pane">
+                <MonacoEditor @ref="editor" @key="activeType" Value="@ActiveContent" ValueChanged="ActiveValueChangedAsync"
+                              Height="520px" Language="cpp" AriaLabel="@($"GNU C++17 source {ActiveFileName}")" />
+                <div class="editor-status-row">
+                    <span>@ActiveFileName · v@(ActiveArtifact?.Version ?? 0) · @(isSaved ? "Đã lưu local" : "Chưa lưu")</span>
+                    <div class="button-row compact-actions">
+                        <button class="btn btn-secondary" @onclick="SaveButtonAsync" disabled="@isBusy">Lưu ngay</button>
+                        <button class="btn btn-secondary" @onclick="CompileActiveAsync" disabled="@(isBusy || ActiveArtifact is null)">Compile file này</button>
+                        <button class="btn btn-secondary" @onclick="AutoFixAsync" disabled="@(isBusy || ActiveArtifact is null)">Auto-fix</button>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="compile-output-pane" aria-label="Compiler output">
+                <div class="pane-heading">
+                    <div><span class="eyebrow">GNU C++17</span><h3>Compiler output</h3></div>
+                    <span class="status-pill @CompileStatusClass(ActiveArtifact)">@CompileStatusText(ActiveArtifact)</span>
+                </div>
+                <pre>@(ActiveArtifact?.LastCompileOutput ?? "Chưa compile file này.")</pre>
+
+                @if (!string.IsNullOrWhiteSpace(algorithmSummary))
+                {
+                    <details open>
+                        <summary>AI generation audit</summary>
+                        <p>@algorithmSummary</p>
+                        <dl class="code-audit-list">
+                            <div><dt>Time</dt><dd>@timeComplexity</dd></div>
+                            <div><dt>Memory</dt><dd>@memoryComplexity</dd></div>
+                            <div><dt>Checker</dt><dd>@recommendedChecker</dd></div>
+                        </dl>
+                        @if (auditNotes.Count > 0)
+                        {
+                            <strong>Audit notes</strong>
+                            <ul>@foreach (var item in auditNotes) { <li>@item</li> }</ul>
+                        }
+                    </details>
+                }
+            </aside>
+        </div>
+
+        @if (showHistory)
+        {
+            <section class="code-history" aria-label="Lịch sử code">
+                <div class="pane-heading">
+                    <div><span class="eyebrow">Immutable versions</span><h3>Lịch sử @ActiveFileName</h3></div>
+                    <button class="icon-action" title="Đóng" @onclick="ToggleHistory">×</button>
+                </div>
+                @if (ActiveArtifact?.History.Count is null or 0)
+                {
+                    <p>Chưa có phiên bản đã lưu.</p>
+                }
+                else
+                {
+                    @foreach (var version in ActiveArtifact.History)
+                    {
+                        <div class="history-entry">
+                            <div>
+                                <strong>v@(version.VersionNumber) · @version.Source · @version.CompileStatus</strong>
+                                <small>@version.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm") @FormatProvider(version)</small>
+                            </div>
+                            <div class="button-row compact-actions">
+                                <button class="btn btn-ghost" @onclick="() => CompareVersion(version.VersionNumber)">So sánh</button>
+                                <button class="btn btn-ghost" @onclick="() => RestoreVersionAsync(version.VersionNumber)"
+                                        disabled="@(isBusy || version.VersionNumber == ActiveArtifact.Version)">Khôi phục</button>
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (ComparedVersion is { } compared)
+                {
+                    <div class="code-compare">
+                        <h4>So sánh v@compared.VersionNumber với bản đang mở</h4>
+                        <div class="diff-columns">
+                            <div><strong>v@compared.VersionNumber</strong><pre>@compared.Content</pre></div>
+                            <div><strong>Hiện tại</strong><pre>@ActiveContent</pre></div>
+                        </div>
+                    </div>
+                }
+            </section>
+        }
+
+        <section class="code-sample-card" aria-label="Local Sample 1 smoke test">
+            <div class="pane-heading">
+                <div><span class="eyebrow">Local smoke test</span><h3>Sample 1</h3></div>
+                <div class="button-row compact-actions">
+                    <span class="status-pill @SampleStatusClass">@SampleStatusText</span>
+                    <button class="btn btn-secondary" @onclick="GenerateSampleAsync" disabled="@(isBusy || workspace?.HasBothArtifacts != true)">
+                        @(isGeneratingSample ? "Đang chạy…" : "Chạy lại Sample 1")
+                    </button>
+                </div>
+            </div>
+            @if (sample is null)
+            {
+                <p>Compile cả hai file để chạy <code>generate.exe 1</code>, sau đó chạy solution với input vừa sinh.</p>
+            }
+            else
+            {
+                <div class="sample-columns">
+                    <div><strong>sample-1.in</strong><pre>@sample.Input</pre></div>
+                    <div><strong>sample-1.out</strong><pre>@sample.Output</pre></div>
+                </div>
+                <small>Tạo lúc @sample.GeneratedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss"). Đây chỉ là smoke test, không chứng minh thuật toán đúng hoàn toàn.</small>
+            }
+        </section>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public Guid ProjectId { get; set; }
+
+    private CodeWorkspaceSnapshot? workspace;
+    private CodeArtifactType activeType = CodeArtifactType.Solution;
+    private string solutionContent = string.Empty;
+    private string generatorContent = string.Empty;
+    private string? notice;
+    private bool noticeIsError;
+    private bool isLoading = true;
+    private bool isBusy;
+    private bool isGenerating;
+    private bool isCompiling;
+    private bool isSaved = true;
+    private bool showHistory;
+    private bool staleDismissed;
+    private string algorithmSummary = string.Empty;
+    private string timeComplexity = string.Empty;
+    private string memoryComplexity = string.Empty;
+    private string recommendedChecker = string.Empty;
+    private IReadOnlyList<string> auditNotes = [];
+    private IReadOnlyList<string> validationErrors = [];
+    private LocalSampleSnapshot? sample;
+    private bool isGeneratingSample;
+    private bool? lastSampleAttemptSucceeded;
+    private CancellationTokenSource? autosaveCancellation;
+    private MonacoEditor? editor;
+    private Guid loadedProjectId;
+    private int? comparedVersionNumber;
+
+    private CodeArtifactInfo? ActiveArtifact => activeType == CodeArtifactType.Solution ? workspace?.Solution : workspace?.Generator;
+    private string ActiveContent => activeType == CodeArtifactType.Solution ? solutionContent : generatorContent;
+    private string ActiveFileName => activeType == CodeArtifactType.Solution ? "solution.cpp" : "generate.cpp";
+    private CodeArtifactVersionInfo? ComparedVersion => ActiveArtifact?.History.FirstOrDefault(item => item.VersionNumber == comparedVersionNumber);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (loadedProjectId == ProjectId) return;
+        loadedProjectId = ProjectId;
+        await ReloadAsync();
+        if (workspace?.HasBothArtifacts != true)
+        {
+            await GenerateAsync();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        workspace = await CodeGenerationService.LoadAsync(ProjectId);
+        sample = await LocalSampleService.LoadAsync(ProjectId);
+        ApplyWorkspace(workspace);
+        isLoading = false;
+    }
+
+    private void ApplyWorkspace(CodeWorkspaceSnapshot? value)
+    {
+        workspace = value;
+        solutionContent = value?.Solution?.Content ?? string.Empty;
+        generatorContent = value?.Generator?.Content ?? string.Empty;
+        isSaved = true;
+    }
+
+    private async Task SelectArtifactAsync(CodeArtifactType type)
+    {
+        await SaveNowAsync();
+        activeType = type;
+        comparedVersionNumber = null;
+    }
+
+    private Task ActiveValueChangedAsync(string value)
+    {
+        if (activeType == CodeArtifactType.Solution) solutionContent = value;
+        else generatorContent = value;
+        isSaved = false;
+        QueueAutosave();
+        return Task.CompletedTask;
+    }
+
+    private void QueueAutosave()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
+        autosaveCancellation = new CancellationTokenSource();
+        _ = AutosaveAsync(activeType, autosaveCancellation.Token);
+    }
+
+    private async Task AutosaveAsync(CodeArtifactType type, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(800, cancellationToken);
+            await SaveArtifactAsync(type, cancellationToken);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (Exception exception)
+        {
+            notice = $"Autosave thất bại: {exception.Message}";
+            noticeIsError = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SaveArtifactAsync(CodeArtifactType type, CancellationToken cancellationToken)
+    {
+        var content = type == CodeArtifactType.Solution ? solutionContent : generatorContent;
+        workspace = await CodeGenerationService.SaveUserEditAsync(ProjectId, type, content, cancellationToken);
+        isSaved = true;
+    }
+
+    private async Task SaveNowAsync()
+    {
+        autosaveCancellation?.Cancel();
+        if (!isSaved) await SaveArtifactAsync(activeType, CancellationToken.None);
+    }
+
+    private async Task SaveButtonAsync()
+    {
+        isBusy = true;
+        try
+        {
+            await SaveNowAsync();
+            notice = $"Đã lưu {ActiveFileName} thành version bất biến.";
+            noticeIsError = false;
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task GenerateAsync()
+    {
+        isBusy = isGenerating = true;
+        notice = null;
+        validationErrors = [];
+        try
+        {
+            await SaveNowAsync();
+            var result = await CodeGenerationService.GenerateAsync(ProjectId);
+            notice = result.Message;
+            noticeIsError = !result.Succeeded;
+            validationErrors = result.ValidationErrors;
+            algorithmSummary = result.AlgorithmSummary;
+            timeComplexity = result.TimeComplexity;
+            memoryComplexity = result.MemoryComplexity;
+            recommendedChecker = result.RecommendedChecker;
+            auditNotes = result.AuditNotes;
+            if (result.Succeeded)
+            {
+                ApplyWorkspace(result.Workspace);
+                staleDismissed = false;
+            }
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally { isBusy = isGenerating = false; }
+    }
+
+    private async Task CompileActiveAsync()
+    {
+        isBusy = isCompiling = true;
+        try
+        {
+            await SaveNowAsync();
+            var result = await CodeCompileService.CompileArtifactAsync(ProjectId, activeType);
+            await ReloadAsync();
+            notice = result.Succeeded ? $"{result.FileName} compile thành công trong {result.Duration.TotalMilliseconds:N0} ms."
+                : $"{result.FileName} compile thất bại. Xem compiler output để sửa.";
+            noticeIsError = !result.Succeeded;
+        }
+        finally { isBusy = isCompiling = false; }
+    }
+
+    private async Task<CompileWorkspaceResult?> CompileBothCoreAsync()
+    {
+        await SaveNowAsync();
+        if (workspace?.HasBothArtifacts != true)
+        {
+            notice = "Cần có cả solution.cpp và generate.cpp trước khi compile.";
+            noticeIsError = true;
+            return null;
+        }
+
+        var result = await CodeCompileService.CompileAsync(ProjectId);
+        await ReloadAsync();
+        if (result.Succeeded)
+        {
+            var sampleResult = await GenerateSampleCoreAsync();
+            notice = sampleResult.Message;
+            noticeIsError = !sampleResult.Succeeded;
+        }
+        else
+        {
+            notice = "Compile chưa đạt. Xem output của từng file và có thể dùng Auto-fix.";
+            noticeIsError = true;
+        }
+        return result;
+    }
+
+    private async Task CompileBothAsync()
+    {
+        isBusy = isCompiling = true;
+        try { await CompileBothCoreAsync(); }
+        finally { isBusy = isCompiling = false; }
+    }
+
+    public async Task<bool> PrepareToContinueAsync()
+    {
+        isBusy = isCompiling = true;
+        try
+        {
+            var compile = await CompileBothCoreAsync();
+            return compile?.Succeeded == true
+                && lastSampleAttemptSucceeded == true
+                && sample is { InputIsStale: false, OutputIsStale: false };
+        }
+        finally { isBusy = isCompiling = false; }
+    }
+
+    private async Task GenerateSampleAsync()
+    {
+        isBusy = isGeneratingSample = true;
+        try
+        {
+            var result = await GenerateSampleCoreAsync();
+            notice = result.Message;
+            noticeIsError = !result.Succeeded;
+        }
+        finally { isBusy = isGeneratingSample = false; }
+    }
+
+    private async Task<SampleGenerationResult> GenerateSampleCoreAsync()
+    {
+        var result = await LocalSampleService.GenerateAsync(ProjectId);
+        lastSampleAttemptSucceeded = result.Succeeded;
+        sample = result.Sample ?? await LocalSampleService.LoadAsync(ProjectId);
+        return result;
+    }
+
+    private async Task AutoFixAsync()
+    {
+        isBusy = true;
+        try
+        {
+            await SaveNowAsync();
+            var result = await CodeGenerationService.AutoFixAsync(ProjectId, activeType);
+            ApplyWorkspace(result.Workspace);
+            notice = result.Message;
+            noticeIsError = !result.Succeeded;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or IntegrationConfigurationException or ExternalServiceException)
+        {
+            notice = exception.Message;
+            noticeIsError = true;
+        }
+        finally { isBusy = false; }
+    }
+
+    private async Task RestoreVersionAsync(int versionNumber)
+    {
+        isBusy = true;
+        try
+        {
+            ApplyWorkspace(await CodeGenerationService.RestoreAsync(ProjectId, activeType, versionNumber));
+            notice = $"Đã khôi phục v{versionNumber} của {ActiveFileName} thành một version mới.";
+            noticeIsError = false;
+            comparedVersionNumber = null;
+        }
+        finally { isBusy = false; }
+    }
+
+    private Task UndoEditorAsync() => editor?.UndoAsync() ?? Task.CompletedTask;
+    private Task RedoEditorAsync() => editor?.RedoAsync() ?? Task.CompletedTask;
+    private async Task CopyAsync() => await JavaScript.InvokeVoidAsync("navigator.clipboard.writeText", ActiveContent);
+    private void ToggleHistory() => showHistory = !showHistory;
+    private void CompareVersion(int versionNumber) => comparedVersionNumber = versionNumber;
+
+    private static string CompileBadge(CodeArtifactInfo? artifact) => artifact?.LastCompileStatus switch
+    {
+        CompileStatus.Succeeded => "✓",
+        CompileStatus.Failed or CompileStatus.TimedOut => "!",
+        CompileStatus.Compiling => "…",
+        _ => string.Empty,
+    };
+
+    private static string CompileStatusText(CodeArtifactInfo? artifact) => artifact?.LastCompileStatus switch
+    {
+        CompileStatus.Succeeded => "Compile OK",
+        CompileStatus.Failed => "Compile lỗi",
+        CompileStatus.TimedOut => "Quá thời gian",
+        CompileStatus.Cancelled => "Đã hủy",
+        CompileStatus.Compiling => "Đang compile",
+        _ => "Chưa compile",
+    };
+
+    private static string CompileStatusClass(CodeArtifactInfo? artifact) => artifact?.LastCompileStatus switch
+    {
+        CompileStatus.Succeeded => "success",
+        CompileStatus.Failed or CompileStatus.TimedOut => "danger",
+        CompileStatus.Compiling => "warning",
+        _ => "neutral",
+    };
+
+    private static string FormatProvider(CodeArtifactVersionInfo version) =>
+        string.IsNullOrWhiteSpace(version.Provider) ? string.Empty : $"· {version.Provider}/{version.Model}";
+
+    private string SampleStatusClass => sample switch
+    {
+        null => "neutral",
+        { InputIsStale: true } or { OutputIsStale: true } => "warning",
+        _ => "success",
+    };
+
+    private string SampleStatusText => sample switch
+    {
+        null => "Chưa chạy",
+        { InputIsStale: true } or { OutputIsStale: true } => "Đã stale",
+        _ => "Run OK",
+    };
+
+    public void Dispose()
+    {
+        autosaveCancellation?.Cancel();
+        autosaveCancellation?.Dispose();
+    }
+}

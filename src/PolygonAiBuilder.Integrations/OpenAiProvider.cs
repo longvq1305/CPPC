@@ -275,7 +275,10 @@ public sealed class OpenAiProvider(
         && !id.Contains("transcribe", StringComparison.OrdinalIgnoreCase)
         && !id.Contains("tts", StringComparison.OrdinalIgnoreCase)
         && !id.Contains("image", StringComparison.OrdinalIgnoreCase)
-        && !id.Contains("search", StringComparison.OrdinalIgnoreCase);
+        && !id.Contains("search", StringComparison.OrdinalIgnoreCase)
+        && !id.Contains("moderation", StringComparison.OrdinalIgnoreCase)
+        && !id.Contains("instruct", StringComparison.OrdinalIgnoreCase)
+        && !id.Contains("embedding", StringComparison.OrdinalIgnoreCase);
 
     private static bool SupportsImages(string id) =>
         !id.StartsWith("o1-mini", StringComparison.OrdinalIgnoreCase)

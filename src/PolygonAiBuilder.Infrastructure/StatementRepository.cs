@@ -68,6 +68,8 @@ public sealed class StatementRepository(
         }
 
         statement.IsCodeStale = code.Length > 0;
+        var project = await db.ProblemProjects.SingleAsync(item => item.Id == projectId, cancellationToken);
+        project.InvalidateSync(PolygonSyncPhase.GeneralInfoSaved, now);
         await db.SaveChangesAsync(cancellationToken);
         return await GetRequiredAsync(db, projectId, cancellationToken);
     }
@@ -117,6 +119,8 @@ public sealed class StatementRepository(
         }
 
         statement.IsCodeStale = code.Length > 0;
+        var project = await db.ProblemProjects.SingleAsync(item => item.Id == projectId, cancellationToken);
+        project.InvalidateSync(PolygonSyncPhase.GeneralInfoSaved, now);
         await db.SaveChangesAsync(cancellationToken);
         return await GetRequiredAsync(db, projectId, cancellationToken);
     }

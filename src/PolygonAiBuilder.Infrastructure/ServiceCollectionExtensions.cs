@@ -31,15 +31,34 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IConversationRepository, ConversationRepository>();
         services.AddScoped<IModelCacheRepository, ModelCacheRepository>();
         services.AddScoped<IStatementRepository, StatementRepository>();
+        services.AddScoped<ICodeRepository, CodeRepository>();
+        services.AddScoped<ISampleRepository, SampleRepository>();
+        services.AddScoped<ITestConfigurationRepository, TestConfigurationRepository>();
+        services.AddScoped<IPolygonSyncRepository, PolygonSyncRepository>();
+        services.AddSingleton<ICheckerSourceStore, CheckerSourceStore>();
         services.AddScoped<IAttachmentStore, AttachmentStore>();
         services.AddSingleton<ISecretStore, DpapiSecretStore>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddHttpClient("toolchain-download", client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("PolygonAiBuilder/1.0");
+        });
+        services.AddScoped<IToolchainService, ToolchainService>();
         services.AddScoped<IProjectService, ProjectService>();
         services.AddScoped<IGeneralInfoService, GeneralInfoService>();
         services.AddScoped<ISettingsService, SettingsService>();
+        services.AddScoped<IConnectionDiagnosticsService, ConnectionDiagnosticsService>();
         services.AddScoped<IModelCatalogService, ModelCatalogService>();
         services.AddScoped<IAiWorkspaceService, AiWorkspaceService>();
         services.AddSingleton<ILatexValidator, LatexValidator>();
         services.AddScoped<IStatementService, StatementService>();
+        services.AddScoped<ICodeCompileService, CodeCompileService>();
+        services.AddScoped<ICodeGenerationService, CodeGenerationService>();
+        services.AddScoped<ILocalSampleService, LocalSampleService>();
+        services.AddScoped<ITestConfigurationService, TestConfigurationService>();
+        services.AddScoped<ISelfAuditService, SelfAuditService>();
+        services.AddScoped<IPolygonSyncService, PolygonSyncService>();
         return services;
     }
 

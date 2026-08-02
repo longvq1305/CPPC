@@ -11,6 +11,7 @@
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
     [Parameter] public string Height { get; set; } = "420px";
     [Parameter] public string AriaLabel { get; set; } = "Statement source editor";
+    [Parameter] public string Language { get; set; } = "plaintext";
 
     private readonly string editorId = $"monaco-{Guid.NewGuid():N}";
     private ElementReference shell;
@@ -24,7 +25,7 @@
         {
             module = await JavaScript.InvokeAsync<IJSObjectReference>("import", "./js/monacoInterop.js");
             dotnetReference = DotNetObjectReference.Create(this);
-            await module.InvokeVoidAsync("create", shell, Value, dotnetReference);
+            await module.InvokeVoidAsync("create", shell, Value, Language, dotnetReference);
             initialized = true;
             return;
         }

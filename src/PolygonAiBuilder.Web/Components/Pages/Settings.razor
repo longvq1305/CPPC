@@ -2,6 +2,9 @@
 @inject ISettingsService SettingsService
 @inject IPolygonClient PolygonClient
 @inject IModelCatalogService ModelCatalog
+@inject IToolchainService ToolchainService
+@inject IConnectionDiagnosticsService ConnectionDiagnostics
+@inject PolygonAiBuilder.Infrastructure.RuntimePaths Paths
 
 <PageTitle>Cài đặt · Polygon AI Builder</PageTitle>
 
@@ -11,9 +14,12 @@
         <h1>Cài đặt</h1>
         <p>Credential được mã hóa bằng Windows DPAPI CurrentUser và không được lưu trong database.</p>
     </div>
-    <button class="btn btn-primary app-primary" @onclick="SaveAsync" disabled="@(isBusy || isLoading)">
-        @(isBusy ? "Đang lưu…" : "Lưu thay đổi")
-    </button>
+    <div class="button-row">
+        <button class="btn btn-secondary" @onclick="OpenLogsFolder">Open logs folder</button>
+        <button class="btn btn-primary app-primary" @onclick="SaveAsync" disabled="@(isBusy || isLoading)">
+            @(isBusy ? "Đang lưu…" : "Lưu thay đổi")
+        </button>
+    </div>
 </header>
 
 @if (isLoading)
@@ -142,18 +148,24 @@ else
             <div class="settings-title">
                 <span class="provider-logo toolchain-logo">C++</span>
                 <div><h2>Local toolchain</h2><p>GNU C++17 · bundled</p></div>
-                <span class="status-pill warning">Chưa xác minh</span>
+                <span class="status-pill @ToolchainStatusClass">@ToolchainStatusLabel</span>
             </div>
             <dl class="status-list">
-                <div><dt>Compiler</dt><dd>Chờ toolchain bundle</dd></div>
-                <div><dt>GNU C++17</dt><dd>Chưa kiểm tra</dd></div>
-                <div><dt>testlib.h</dt><dd>Chưa kiểm tra</dd></div>
-                <div><dt>Checker source</dt><dd>Chưa kiểm tra</dd></div>
+                <div><dt>Compiler</dt><dd>@(toolchainStatus?.CompilerVersion ?? "Chưa xác minh")</dd></div>
+                <div><dt>GNU C++17</dt><dd>@ReadyText(toolchainStatus?.SupportsGnuCpp17)</dd></div>
+                <div><dt>testlib.h</dt><dd>@ReadyText(toolchainStatus?.HasTestlib)</dd></div>
+                <div><dt>Checker source</dt><dd>@ReadyText(toolchainStatus is { HasNcmp: true, HasWcmp: true })</dd></div>
             </dl>
             <div class="button-row">
-                <button class="btn btn-secondary" disabled title="Toolchain bootstrap được triển khai ở phase Code">Verify toolchain</button>
-                <button class="btn btn-secondary" disabled title="Toolchain bootstrap được triển khai ở phase Code">Repair toolchain</button>
+                <button class="btn btn-secondary" @onclick="VerifyToolchainAsync" disabled="@isToolchainBusy">Verify toolchain</button>
+                <button class="btn btn-secondary" @onclick="RepairToolchainAsync" disabled="@isToolchainBusy">
+                    @(isRepairingToolchain ? "Đang tải/xác minh…" : "Repair toolchain")
+                </button>
             </div>
+            @if (!string.IsNullOrWhiteSpace(toolchainMessage))
+            {
+                <p class="connection-result @(toolchainStatus?.IsReady == true ? "success" : "failed")" role="status">@toolchainMessage</p>
+            }
             <p class="security-note">Ứng dụng sẽ không chạy code đính kèm. Code trong editor chỉ chạy sau cảnh báo rõ ràng.</p>
         </section>
     </div>
@@ -186,6 +198,13 @@ else
     private string? polygonTestMessage;
     private bool saveSucceeded;
     private string? statusMessage;
+    private ToolchainStatus? toolchainStatus;
+    private string? toolchainMessage;
+    private bool isToolchainBusy;
+    private bool isRepairingToolchain;
+
+    private string ToolchainStatusClass => toolchainStatus?.IsReady == true ? "success" : toolchainStatus is null ? "neutral" : "warning";
+    private string ToolchainStatusLabel => toolchainStatus?.IsReady == true ? "Sẵn sàng" : toolchainStatus is null ? "Chưa xác minh" : "Cần repair";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -205,6 +224,7 @@ else
             {
                 geminiModels = await ModelCatalog.GetModelsAsync(AiProviderKind.Gemini, refresh: false);
             }
+            await VerifyToolchainAsync();
         }
         catch (Exception)
         {
@@ -272,16 +292,19 @@ else
             var result = await PolygonClient.TestConnectionAsync();
             polygonTestSucceeded = result.Succeeded;
             polygonTestMessage = $"{result.Message} ({result.Duration.TotalMilliseconds:N0} ms)";
+            await ConnectionDiagnostics.RecordPolygonAsync(result.Succeeded, polygonTestMessage);
         }
         catch (IntegrationConfigurationException exception)
         {
             polygonTestSucceeded = false;
             polygonTestMessage = exception.Message;
+            await ConnectionDiagnostics.RecordPolygonAsync(false, exception.Message);
         }
         catch (ExternalServiceException exception)
         {
             polygonTestSucceeded = false;
             polygonTestMessage = exception.Message;
+            await ConnectionDiagnostics.RecordPolygonAsync(false, exception.Message);
         }
         finally
         {
@@ -303,17 +326,20 @@ else
                 openAiModels = models;
                 openAiTestSucceeded = true;
                 openAiTestMessage = $"Đã tải {models.Count} model chat từ OpenAI.";
+                await ConnectionDiagnostics.RecordAiAsync(AiProviderKind.OpenAI, true, openAiTestMessage);
             }
             else
             {
                 geminiModels = models;
                 geminiTestSucceeded = true;
                 geminiTestMessage = $"Đã tải {models.Count} model chat từ Gemini.";
+                await ConnectionDiagnostics.RecordAiAsync(AiProviderKind.Gemini, true, geminiTestMessage);
             }
         }
         catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
         {
             SetAiTestResult(provider, false, exception.Message);
+            await ConnectionDiagnostics.RecordAiAsync(provider, false, exception.Message);
         }
         finally
         {
@@ -329,12 +355,14 @@ else
         try
         {
             var result = await ModelCatalog.TestConnectionAsync(provider);
-            SetAiTestResult(provider, result.Succeeded,
-                $"{result.Message} ({result.Duration.TotalMilliseconds:N0} ms)");
+            var message = $"{result.Message} ({result.Duration.TotalMilliseconds:N0} ms)";
+            SetAiTestResult(provider, result.Succeeded, message);
+            await ConnectionDiagnostics.RecordAiAsync(provider, result.Succeeded, message);
         }
         catch (Exception exception) when (exception is IntegrationConfigurationException or ExternalServiceException)
         {
             SetAiTestResult(provider, false, exception.Message);
+            await ConnectionDiagnostics.RecordAiAsync(provider, false, exception.Message);
         }
         finally
         {
@@ -355,4 +383,69 @@ else
             geminiTestMessage = message;
         }
     }
+
+    private async Task VerifyToolchainAsync()
+    {
+        isToolchainBusy = true;
+        try
+        {
+            toolchainStatus = await ToolchainService.VerifyAsync();
+            toolchainMessage = toolchainStatus.Message;
+            if (toolchainStatus.Issues.Count > 0)
+            {
+                toolchainMessage += " " + string.Join(" ", toolchainStatus.Issues);
+            }
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            toolchainMessage = exception.Message;
+        }
+        finally
+        {
+            isToolchainBusy = false;
+        }
+    }
+
+    private async Task RepairToolchainAsync()
+    {
+        isToolchainBusy = isRepairingToolchain = true;
+        toolchainMessage = "Đang tải và xác minh toolchain đã pin. Lần đầu có thể mất vài phút…";
+        try
+        {
+            toolchainStatus = await ToolchainService.RepairAsync();
+            toolchainMessage = toolchainStatus.Message;
+        }
+        catch (Exception exception) when (exception is HttpRequestException or IOException or InvalidDataException)
+        {
+            toolchainMessage = $"Repair toolchain thất bại: {exception.Message}";
+        }
+        finally
+        {
+            isToolchainBusy = isRepairingToolchain = false;
+        }
+    }
+
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            Directory.CreateDirectory(Paths.LogsPath);
+            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = Paths.LogsPath,
+                UseShellExecute = true,
+            });
+            statusMessage = process is null
+                ? "Windows không thể mở thư mục logs. Đường dẫn được hiển thị ở Diagnostics."
+                : "Đã yêu cầu Windows mở thư mục logs.";
+            saveSucceeded = process is not null;
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+        {
+            statusMessage = $"Không thể mở thư mục logs: {exception.Message}";
+            saveSucceeded = false;
+        }
+    }
+
+    private static string ReadyText(bool? ready) => ready == true ? "OK" : ready == false ? "Thiếu/lỗi" : "Chưa kiểm tra";
 }

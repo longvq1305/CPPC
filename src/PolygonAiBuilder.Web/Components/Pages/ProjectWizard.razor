@@ -132,6 +132,18 @@ else
                 <div class="notice notice-error statement-continue-notice" role="alert">@statementContinueMessage</div>
             }
         }
+        else if (Step == 4)
+        {
+            <CodeWorkspace @ref="codeWorkspace" ProjectId="ProjectId" />
+            @if (!string.IsNullOrWhiteSpace(codeContinueMessage))
+            {
+                <div class="notice notice-error statement-continue-notice" role="alert">@codeContinueMessage</div>
+            }
+        }
+        else if (Step == 5)
+        {
+            <TestsAndSync ProjectId="ProjectId" />
+        }
         else
         {
             <div class="phase-placeholder">
@@ -169,7 +181,9 @@ else
     private bool isLoading = true;
     private bool isNavigating;
     private StatementEditor? statementEditor;
+    private CodeWorkspace? codeWorkspace;
     private string? statementContinueMessage;
+    private string? codeContinueMessage;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -217,8 +231,31 @@ else
     {
         1 => CheckNameAndContinueAsync(),
         3 => ValidateStatementAndContinueAsync(),
+        4 => ValidateCodeAndContinueAsync(),
         _ => NavigateToStepAsync(Step + 1),
     };
+
+    private async Task ValidateCodeAndContinueAsync()
+    {
+        if (codeWorkspace is null) return;
+        isNavigating = true;
+        try
+        {
+            if (!await codeWorkspace.PrepareToContinueAsync())
+            {
+                codeContinueMessage = "Chưa thể tiếp tục: cả solution.cpp và generate.cpp phải compile thành công bằng bundled GNU C++17.";
+                return;
+            }
+
+            codeContinueMessage = null;
+            await ProjectService.SetCurrentScreenAsync(ProjectId, 5);
+            Navigation.NavigateTo($"/projects/{ProjectId}/step/5");
+        }
+        finally
+        {
+            isNavigating = false;
+        }
+    }
 
     private async Task ValidateStatementAndContinueAsync()
     {

@@ -16,7 +16,10 @@ var runtimeRoot = string.IsNullOrWhiteSpace(configuredRoot)
         ? Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "..", ".."))
         : builder.Environment.ContentRootPath
     : Path.GetFullPath(configuredRoot, builder.Environment.ContentRootPath);
-builder.Services.AddPolygonAiBuilderInfrastructure(RuntimePaths.Create(runtimeRoot));
+var runtimePaths = RuntimePaths.Create(runtimeRoot);
+runtimePaths.EnsureDirectories();
+builder.Logging.AddProvider(new DailyFileLoggerProvider(runtimePaths.LogsPath));
+builder.Services.AddPolygonAiBuilderInfrastructure(runtimePaths);
 
 var app = builder.Build();
 

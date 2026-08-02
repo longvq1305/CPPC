@@ -32,4 +32,16 @@ public sealed class GeneralInfoValidatorTests
 
         Assert.Contains(issues, issue => issue.Field == "OutputFile");
     }
+
+    [Theory]
+    [InlineData("../input.txt")]
+    [InlineData("..\\input.txt")]
+    [InlineData("C:\\temp\\input.txt")]
+    [InlineData("..")]
+    public void Validate_RejectsPathsAndTraversal(string inputFile)
+    {
+        var issues = GeneralInfoValidator.Validate("problem", inputFile, "stdout", 1_000, 256);
+
+        Assert.Contains(issues, issue => issue.Field == "InputFile");
+    }
 }

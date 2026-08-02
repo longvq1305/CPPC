@@ -87,5 +87,13 @@ public static class GeneralInfoValidator
         {
             issues.Add(new(field, $"{label} chứa ký tự điều khiển không hợp lệ."));
         }
+
+        var normalized = value.Trim();
+        if (normalized is "." or ".."
+            || !string.Equals(Path.GetFileName(normalized), normalized, StringComparison.Ordinal)
+            || normalized.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+        {
+            issues.Add(new(field, $"{label} phải là tên file đơn, không được chứa đường dẫn."));
+        }
     }
 }

@@ -72,6 +72,38 @@ public interface IStatementRepository
         CancellationToken cancellationToken);
 }
 
+public interface ICodeRepository
+{
+    Task<CodeWorkspaceSnapshot?> GetAsync(Guid projectId, CancellationToken cancellationToken);
+    Task<CodeWorkspaceSnapshot> SaveGeneratedAsync(
+        Guid projectId,
+        CodeGenerationOutput output,
+        int statementVersion,
+        string provider,
+        string model,
+        CancellationToken cancellationToken);
+    Task<CodeWorkspaceSnapshot> SaveArtifactAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        string content,
+        ChangeSource source,
+        int statementVersion,
+        string? provider,
+        string? model,
+        CancellationToken cancellationToken);
+    Task MarkCompileAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        CompileStatus status,
+        string output,
+        CancellationToken cancellationToken);
+    Task<CodeWorkspaceSnapshot> RestoreAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        int versionNumber,
+        CancellationToken cancellationToken);
+}
+
 public interface IAttachmentStore
 {
     Task<AttachmentInfo> SaveAsync(
@@ -119,6 +151,21 @@ public interface ISettingsService
 {
     Task<SettingsSnapshot> LoadAsync(CancellationToken cancellationToken = default);
     Task SaveAsync(SettingsUpdate update, CancellationToken cancellationToken = default);
+}
+
+public interface IConnectionDiagnosticsService
+{
+    Task<ConnectionDiagnosticsSnapshot> LoadAsync(CancellationToken cancellationToken = default);
+    Task RecordAiAsync(
+        AiProviderKind provider,
+        bool succeeded,
+        string message,
+        CancellationToken cancellationToken = default);
+    Task RecordPolygonAsync(
+        bool succeeded,
+        string message,
+        TimeSpan? serverTimeOffset = null,
+        CancellationToken cancellationToken = default);
 }
 
 public interface IAiProvider
@@ -191,12 +238,190 @@ public interface IStatementService
     StatementDiff Compare(StatementContent before, StatementContent after);
 }
 
+public interface ICodeGenerationService
+{
+    Task<CodeWorkspaceSnapshot?> LoadAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<CodeGenerationResult> GenerateAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<CodeWorkspaceSnapshot> SaveUserEditAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        string content,
+        CancellationToken cancellationToken = default);
+    Task<CodeWorkspaceSnapshot> RestoreAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        int versionNumber,
+        CancellationToken cancellationToken = default);
+    Task<AutoFixResult> AutoFixAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ICodeCompileService
+{
+    Task<CompileWorkspaceResult> CompileAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<CompileArtifactResult> CompileArtifactAsync(
+        Guid projectId,
+        CodeArtifactType type,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IToolchainService
+{
+    Task<ToolchainStatus> VerifyAsync(CancellationToken cancellationToken = default);
+    Task<ToolchainStatus> RepairAsync(CancellationToken cancellationToken = default);
+}
+
+public interface IProcessRunner
+{
+    Task<ProcessExecutionResult> RunAsync(ProcessExecutionRequest request, CancellationToken cancellationToken = default);
+}
+
+public interface ISampleRepository
+{
+    Task<LocalSampleSnapshot?> GetAsync(Guid projectId, int testIndex, CancellationToken cancellationToken = default);
+    Task<LocalSampleSnapshot> SaveGeneratedAsync(
+        Guid projectId,
+        int testIndex,
+        string input,
+        string output,
+        CancellationToken cancellationToken = default);
+    Task<LocalSampleSnapshot> SaveManualAsync(
+        Guid projectId,
+        int testIndex,
+        string input,
+        string output,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ILocalSampleService
+{
+    Task<LocalSampleSnapshot?> LoadAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<SampleGenerationResult> GenerateAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<LocalSampleSnapshot> SaveManualAsync(
+        Guid projectId,
+        string input,
+        string output,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ITestConfigurationRepository
+{
+    Task<TestConfigurationSnapshot?> GetAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<TestConfigurationSnapshot> SaveAsync(
+        Guid projectId,
+        TestConfigurationUpdate update,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ITestConfigurationService
+{
+    Task<TestConfigurationSnapshot?> LoadAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<TestConfigurationSnapshot> SaveAsync(
+        Guid projectId,
+        TestConfigurationUpdate update,
+        CancellationToken cancellationToken = default);
+    Task<TestConfigurationSnapshot> RegenerateScriptAsync(
+        Guid projectId,
+        TestConfigurationUpdate update,
+        CancellationToken cancellationToken = default);
+    string CreateDefaultScript(int testCount);
+}
+
+public interface ISelfAuditService
+{
+    Task<SelfAuditResult> RunAsync(Guid projectId, CancellationToken cancellationToken = default);
+}
+
+public interface IPolygonSyncRepository
+{
+    Task<PolygonSyncSnapshot?> GetAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task<Guid> StartOperationAsync(
+        Guid projectId,
+        PolygonSyncPhase phase,
+        string endpoint,
+        string requestFingerprint,
+        CancellationToken cancellationToken = default);
+    Task<PolygonSyncSnapshot> CompleteOperationAsync(
+        Guid operationId,
+        Guid projectId,
+        PolygonSyncPhase phase,
+        string summary,
+        long? createdProblemId = null,
+        int? packageRevision = null,
+        int retryCount = 0,
+        CancellationToken cancellationToken = default);
+    Task<PolygonSyncSnapshot> FailOperationAsync(
+        Guid operationId,
+        Guid projectId,
+        PolygonSyncPhase phase,
+        string errorCode,
+        string errorMessage,
+        int retryCount,
+        CancellationToken cancellationToken = default);
+}
+
+public interface ICheckerSourceStore
+{
+    Task<string> ReadAsync(string checkerName, CancellationToken cancellationToken = default);
+}
+
+public interface IPolygonSyncService
+{
+    Task<PolygonSyncSnapshot?> LoadAsync(Guid projectId, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<PolygonSyncProgress> SyncAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IPolygonClient
 {
     Task<IReadOnlyList<PolygonProblem>> ListProblemsAsync(
         string? name,
         CancellationToken cancellationToken = default);
     Task<ConnectionTestResult> TestConnectionAsync(CancellationToken cancellationToken = default);
+    Task<PolygonProblem> CreateProblemAsync(string name, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task UpdateInfoAsync(
+        long problemId,
+        string inputFile,
+        string outputFile,
+        int timeLimitMs,
+        int memoryLimitMb,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task SaveStatementAsync(long problemId, PolygonStatementPayload statement, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task SaveSolutionAsync(long problemId, string source, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task SaveSourceFileAsync(
+        long problemId,
+        string name,
+        string source,
+        string sourceType,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task SetCheckerAsync(long problemId, string checkerName, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task SaveScriptAsync(long problemId, string testset, string source, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task EnablePointsAsync(long problemId, bool enabled, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task SaveTestMetadataAsync(long problemId, PolygonTestMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<RenderStatementsResult> RenderStatementsAsync(
+        long problemId,
+        bool includeContent,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task<PolygonCommitResult> CommitAsync(
+        long problemId,
+        string? message,
+        CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    Task BuildStandardPackageAsync(long problemId, bool verify, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<IReadOnlyList<PolygonPackage>> ListPackagesAsync(long problemId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<PolygonCautions> GetCautionsAsync(long problemId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }
 
 public sealed class IntegrationConfigurationException(string message) : Exception(message);

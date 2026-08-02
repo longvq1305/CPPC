@@ -16,20 +16,24 @@ source control.
 ## Local boundary
 
 Kestrel listens only on `127.0.0.1`. Runtime data and secrets are not static web
-assets. External writes are not background side effects: Polygon sync will begin only
-from an explicit user action and AI provider adapters will have no Polygon authority.
+assets. External writes are not background side effects: Polygon sync begins only
+from an explicit user action and AI provider adapters have no Polygon authority.
 
 ## Generated code and attachments
 
-Generated or attached source is untrusted. Later phases must validate attachment
-type, size, filename, and archive paths before controlled storage. Attachments cannot
-be executed from chat. Local C++ execution must display the required warning, avoid a
-shell, restrict working directories and output, apply timeouts, kill the process tree
-on cancellation, and clearly state that this is isolation rather than a security
-sandbox.
+Generated or attached source is untrusted. The app validates attachment type, size,
+filename, and archive paths before controlled storage. Attachments cannot be executed
+from chat. Local C++ execution displays the required warning, avoids a shell,
+restricts working directories and output, applies timeouts, kills the process tree on
+cancellation, and clearly states that these controls are not a security sandbox.
+
+Daily logs retain 14 days and redact recognizable bearer tokens, provider keys,
+Polygon key/secret labels, and signatures. Normal logging does not include full
+prompts, attachments, source files, or decrypted secrets.
 
 ## Verification
 
-Foundation integration tests confirm a DPAPI round trip and verify that plaintext is
-absent from the encrypted file. Release work must also scan tracked files and publish
-artifacts for credential-shaped data before distribution.
+Integration tests confirm a DPAPI round trip and verify that plaintext is absent from
+the encrypted file. Tests also cover path traversal, safe ZIP extraction, process
+timeouts/output caps, log redaction, and request-error redaction. The publish script
+verifies the pinned toolchain and runs the full suite before distribution.

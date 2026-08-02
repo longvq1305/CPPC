@@ -31,7 +31,7 @@ function loadMonaco() {
     return monacoPromise;
 }
 
-export async function create(shell, value, dotnetReference) {
+export async function create(shell, value, language, dotnetReference) {
     if (!shell || editors.has(shell.id)) {
         return;
     }
@@ -44,7 +44,7 @@ export async function create(shell, value, dotnetReference) {
         shell.appendChild(host);
         const editor = monaco.editor.create(host, {
             value: value ?? '',
-            language: 'plaintext',
+            language: language || 'plaintext',
             automaticLayout: true,
             minimap: { enabled: false },
             wordWrap: 'on',

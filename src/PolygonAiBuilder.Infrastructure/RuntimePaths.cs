@@ -28,5 +28,6 @@ public sealed record RuntimePaths(
         Directory.CreateDirectory(DataPath);
         Directory.CreateDirectory(ProjectsPath);
         Directory.CreateDirectory(LogsPath);
+        Directory.CreateDirectory(ToolchainPath);
     }
 }

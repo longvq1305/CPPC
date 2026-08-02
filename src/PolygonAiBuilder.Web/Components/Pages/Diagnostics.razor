@@ -1,5 +1,7 @@
 @page "/diagnostics"
 @inject PolygonAiBuilder.Infrastructure.RuntimePaths Paths
+@inject IToolchainService ToolchainService
+@inject IConnectionDiagnosticsService ConnectionDiagnostics
 
 <PageTitle>Diagnostics · Polygon AI Builder</PageTitle>
 
@@ -19,9 +21,50 @@
         <div><dt>Database</dt><dd class="path-value">@Paths.DatabasePath</dd></div>
         <div><dt>Projects</dt><dd class="path-value">@Paths.ProjectsPath</dd></div>
         <div><dt>Logs</dt><dd class="path-value">@Paths.LogsPath</dd></div>
+        <div><dt>Bundled compiler</dt><dd class="path-value">@(toolchain?.CompilerVersion ?? "Đang xác minh…")</dd></div>
+        <div><dt>GNU C++17 toolchain</dt><dd>@(toolchain?.IsReady == true ? "Ready" : toolchain?.Message ?? "Đang xác minh…")</dd></div>
+        <div><dt>testlib/checkers</dt><dd>@(toolchain is { HasTestlib: true, HasNcmp: true, HasWcmp: true } ? "Checksums OK" : "Thiếu hoặc chưa hợp lệ")</dd></div>
+        <div><dt>OpenAI test</dt><dd>@FormatDiagnostic(diagnostics?.OpenAi)</dd></div>
+        <div><dt>Gemini test</dt><dd>@FormatDiagnostic(diagnostics?.Gemini)</dd></div>
+        <div><dt>Polygon test</dt><dd>@FormatDiagnostic(diagnostics?.Polygon)</dd></div>
+        <div><dt>Polygon server time offset</dt><dd>@FormatOffset(diagnostics?.PolygonServerTimeOffset)</dd></div>
     </dl>
 </section>
 
 @code {
     private static string Version => typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+    private ToolchainStatus? toolchain;
+    private ConnectionDiagnosticsSnapshot? diagnostics;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var toolchainTask = ToolchainService.VerifyAsync();
+            var diagnosticsTask = ConnectionDiagnostics.LoadAsync();
+            await Task.WhenAll(toolchainTask, diagnosticsTask);
+            toolchain = await toolchainTask;
+            diagnostics = await diagnosticsTask;
+        }
+        catch (Exception exception) when (exception is IOException or InvalidDataException)
+        {
+            toolchain = new(false, string.Empty, string.Empty, false, false, false, false, exception.Message, [exception.Message]);
+        }
+    }
+
+    private static string FormatDiagnostic(ConnectionDiagnostic? value)
+    {
+        if (value is null || value.Succeeded is null)
+        {
+            return "Chưa chạy kiểm tra kết nối.";
+        }
+
+        var status = value.Succeeded == true ? "OK" : "FAILED";
+        var checkedAt = value.CheckedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "không rõ thời điểm";
+        return $"{status} · {checkedAt} · {value.Message}";
+    }
+
+    private static string FormatOffset(TimeSpan? offset) => offset is null
+        ? "Chưa có dữ liệu từ Polygon API."
+        : $"{offset.Value.TotalMilliseconds:+0;-0;0} ms";
 }
