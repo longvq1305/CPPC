@@ -1,0 +1,27 @@
+@page "/diagnostics"
+@inject PolygonAiBuilder.Infrastructure.RuntimePaths Paths
+
+<PageTitle>Diagnostics · Polygon AI Builder</PageTitle>
+
+<header class="page-header compact-header">
+    <div>
+        <span class="eyebrow">Local diagnostics</span>
+        <h1>Diagnostics</h1>
+        <p>Thông tin kỹ thuật không bao gồm credential, prompt hoặc nội dung file riêng tư.</p>
+    </div>
+</header>
+
+<section class="panel diagnostics-panel">
+    <dl class="status-list diagnostics-list">
+        <div><dt>Application version</dt><dd>@Version</dd></div>
+        <div><dt>Runtime</dt><dd>@System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription</dd></div>
+        <div><dt>Operating system</dt><dd>@System.Runtime.InteropServices.RuntimeInformation.OSDescription</dd></div>
+        <div><dt>Database</dt><dd class="path-value">@Paths.DatabasePath</dd></div>
+        <div><dt>Projects</dt><dd class="path-value">@Paths.ProjectsPath</dd></div>
+        <div><dt>Logs</dt><dd class="path-value">@Paths.LogsPath</dd></div>
+    </dl>
+</section>
+
+@code {
+    private static string Version => typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown";
+}

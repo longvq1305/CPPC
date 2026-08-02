@@ -1,0 +1,200 @@
+@page "/"
+@inject IProjectService ProjectService
+@inject NavigationManager Navigation
+@inject IJSRuntime JavaScript
+
+<PageTitle>Dự án · Polygon AI Builder</PageTitle>
+
+<header class="page-header">
+    <div>
+        <span class="eyebrow">Local workspace</span>
+        <h1>Dự án lập trình</h1>
+        <p>Tạo đề với AI, kiểm tra GNU C++17 trên máy và đồng bộ khi bạn sẵn sàng.</p>
+    </div>
+    <button class="btn btn-primary app-primary" @onclick="ToggleCreate" disabled="@isBusy">
+        <span aria-hidden="true">＋</span> Dự án mới
+    </button>
+</header>
+
+@if (showCreate)
+{
+    <section class="panel create-panel" aria-labelledby="create-title">
+        <div>
+            <span class="step-kicker">Bắt đầu</span>
+            <h2 id="create-title">Tạo dự án local</h2>
+            <p>Problem chỉ được tạo trên Polygon sau khi bạn bấm Đồng bộ ở bước 5.</p>
+        </div>
+        <form class="create-form" @onsubmit="CreateProjectAsync" @onsubmit:preventDefault>
+            <label for="new-name">Tên nội bộ Polygon</label>
+            <div class="input-action-row">
+                <input id="new-name" class="form-control" maxlength="128" autocomplete="off"
+                       placeholder="ví dụ: tong-doan-con" @bind="newProjectName" @bind:event="oninput"
+                       disabled="@isBusy" />
+                <button class="btn btn-primary" type="submit" disabled="@isBusy">
+                    @(isBusy ? "Đang tạo…" : "Tạo dự án")
+                </button>
+                <button class="btn btn-ghost" type="button" @onclick="ToggleCreate" disabled="@isBusy">Hủy</button>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(errorMessage))
+            {
+                <div class="inline-error" role="alert">@errorMessage</div>
+            }
+        </form>
+    </section>
+}
+
+@if (isLoading)
+{
+    <div class="loading-card"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span> Đang tải dự án…</div>
+}
+else if (projects.Count == 0)
+{
+    <section class="empty-state panel">
+        <div class="empty-icon" aria-hidden="true">◇</div>
+        <h2>Chưa có dự án nào</h2>
+        <p>Mỗi dự án có một conversation, statement, code và lịch sử đồng bộ riêng.</p>
+        <button class="btn btn-primary app-primary" @onclick="ToggleCreate">Tạo dự án đầu tiên</button>
+    </section>
+}
+else
+{
+    <div class="section-heading">
+        <h2>Gần đây</h2>
+        <span>@projects.Count dự án</span>
+    </div>
+    <section class="project-grid" aria-label="Danh sách dự án">
+        @foreach (var project in projects)
+        {
+            <article class="project-card panel">
+                <button class="project-open" @onclick="() => OpenProject(project)" aria-label="Mở @project.InternalName">
+                    <div class="project-card-top">
+                        <span class="project-glyph" aria-hidden="true">&lt;/&gt;</span>
+                        <span class="status-pill @GetStatusClass(project.Status)">@GetStatusLabel(project.Status)</span>
+                    </div>
+                    <h3>@project.InternalName</h3>
+                    <p>Bước @project.CurrentScreen/5 · @GetStepLabel(project.CurrentScreen)</p>
+                    <div class="project-meta">
+                        <span>Cập nhật @project.UpdatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span>
+                        <span>@GetSyncLabel(project.SyncPhase)</span>
+                    </div>
+                </button>
+                <button class="icon-button danger-button" title="Xóa dự án" aria-label="Xóa @project.InternalName"
+                        @onclick="() => DeleteProjectAsync(project)" disabled="@isBusy">×</button>
+            </article>
+        }
+    </section>
+}
+
+@code {
+    private IReadOnlyList<ProjectSummary> projects = [];
+    private string newProjectName = string.Empty;
+    private string? errorMessage;
+    private bool showCreate;
+    private bool isBusy;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync() => await ReloadAsync();
+
+    private void ToggleCreate()
+    {
+        showCreate = !showCreate;
+        errorMessage = null;
+    }
+
+    private async Task CreateProjectAsync()
+    {
+        errorMessage = null;
+        if (string.IsNullOrWhiteSpace(newProjectName))
+        {
+            errorMessage = "Hãy nhập tên nội bộ Polygon.";
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            var project = await ProjectService.CreateAsync(newProjectName);
+            Navigation.NavigateTo($"/projects/{project.Id}/step/1");
+        }
+        catch (ArgumentException exception)
+        {
+            errorMessage = exception.Message;
+        }
+        catch (InvalidOperationException)
+        {
+            errorMessage = "Không thể tạo dự án. Hãy kiểm tra tên và thử lại.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void OpenProject(ProjectSummary project) =>
+        Navigation.NavigateTo($"/projects/{project.Id}/step/{project.CurrentScreen}");
+
+    private async Task DeleteProjectAsync(ProjectSummary project)
+    {
+        var confirmed = await JavaScript.InvokeAsync<bool>(
+            "confirm",
+            $"Xóa dự án “{project.InternalName}” khỏi máy này? Thao tác này không ảnh hưởng Polygon.");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        isBusy = true;
+        try
+        {
+            await ProjectService.DeleteAsync(project.Id);
+            await ReloadAsync();
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        isLoading = true;
+        projects = await ProjectService.ListAsync();
+        isLoading = false;
+    }
+
+    private static string GetStatusClass(ProjectStatus status) => status switch
+    {
+        ProjectStatus.Synced => "success",
+        ProjectStatus.Syncing => "info",
+        ProjectStatus.SyncFailed => "danger",
+        ProjectStatus.Ready => "warning",
+        _ => "neutral",
+    };
+
+    private static string GetStatusLabel(ProjectStatus status) => status switch
+    {
+        ProjectStatus.Synced => "Đã đồng bộ",
+        ProjectStatus.Syncing => "Đang đồng bộ",
+        ProjectStatus.SyncFailed => "Đồng bộ lỗi",
+        ProjectStatus.Ready => "Sẵn sàng",
+        _ => "Bản nháp",
+    };
+
+    private static string GetSyncLabel(PolygonSyncPhase phase) => phase switch
+    {
+        PolygonSyncPhase.PackageReady => "Package ready",
+        PolygonSyncPhase.NotCreated => "Chỉ local",
+        PolygonSyncPhase.PackageFailed => "Package failed",
+        _ => phase.ToString(),
+    };
+
+    private static string GetStepLabel(int step) => step switch
+    {
+        1 => "General Info",
+        2 => "AI Workspace",
+        3 => "Statement",
+        4 => "Code",
+        5 => "Tests & Sync",
+        _ => "Không xác định",
+    };
+}

@@ -1,0 +1,208 @@
+@page "/settings"
+@inject ISettingsService SettingsService
+
+<PageTitle>Cài đặt · Polygon AI Builder</PageTitle>
+
+<header class="page-header compact-header">
+    <div>
+        <span class="eyebrow">Configuration</span>
+        <h1>Cài đặt</h1>
+        <p>Credential được mã hóa bằng Windows DPAPI CurrentUser và không được lưu trong database.</p>
+    </div>
+    <button class="btn btn-primary app-primary" @onclick="SaveAsync" disabled="@(isBusy || isLoading)">
+        @(isBusy ? "Đang lưu…" : "Lưu thay đổi")
+    </button>
+</header>
+
+@if (isLoading)
+{
+    <div class="loading-card"><span class="spinner-border spinner-border-sm"></span> Đang đọc cài đặt đã mã hóa…</div>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="notice @(saveSucceeded ? "notice-success" : "notice-error")" role="status">@statusMessage</div>
+    }
+
+    <div class="settings-grid">
+        <section class="panel settings-card">
+            <div class="settings-title">
+                <span class="provider-logo openai-logo">O</span>
+                <div><h2>OpenAI</h2><p>Responses API</p></div>
+                <span class="status-pill @(snapshot.HasOpenAiApiKey ? "success" : "neutral")">
+                    @(snapshot.HasOpenAiApiKey ? "Đã lưu key" : "Chưa cấu hình")
+                </span>
+            </div>
+            <label for="openai-key">API key</label>
+            <input id="openai-key" type="password" class="form-control" autocomplete="new-password"
+                   placeholder="@(snapshot.HasOpenAiApiKey ? snapshot.OpenAiMasked : "sk-…")" @bind="openAiApiKey" />
+            <div class="form-check clear-check">
+                <input id="clear-openai" class="form-check-input" type="checkbox" @bind="clearOpenAiApiKey" />
+                <label class="form-check-label" for="clear-openai">Xóa key đã lưu</label>
+            </div>
+            <label for="openai-model">Model mặc định</label>
+            <input id="openai-model" class="form-control" maxlength="200" placeholder="Chọn sau khi Refresh models"
+                   @bind="openAiDefaultModel" />
+            <div class="button-row">
+                <button class="btn btn-secondary" disabled title="Model discovery được triển khai ở phase AI">Refresh models</button>
+                <button class="btn btn-secondary" disabled title="Kết nối thật được triển khai cùng provider adapter">Test connection</button>
+            </div>
+        </section>
+
+        <section class="panel settings-card">
+            <div class="settings-title">
+                <span class="provider-logo gemini-logo">G</span>
+                <div><h2>Gemini</h2><p>Interactions API</p></div>
+                <span class="status-pill @(snapshot.HasGeminiApiKey ? "success" : "neutral")">
+                    @(snapshot.HasGeminiApiKey ? "Đã lưu key" : "Chưa cấu hình")
+                </span>
+            </div>
+            <label for="gemini-key">API key</label>
+            <input id="gemini-key" type="password" class="form-control" autocomplete="new-password"
+                   placeholder="@(snapshot.HasGeminiApiKey ? snapshot.GeminiMasked : "Nhập API key")" @bind="geminiApiKey" />
+            <div class="form-check clear-check">
+                <input id="clear-gemini" class="form-check-input" type="checkbox" @bind="clearGeminiApiKey" />
+                <label class="form-check-label" for="clear-gemini">Xóa key đã lưu</label>
+            </div>
+            <label for="gemini-model">Model mặc định</label>
+            <input id="gemini-model" class="form-control" maxlength="200" placeholder="Chọn sau khi Refresh models"
+                   @bind="geminiDefaultModel" />
+            <div class="button-row">
+                <button class="btn btn-secondary" disabled title="Model discovery được triển khai ở phase AI">Refresh models</button>
+                <button class="btn btn-secondary" disabled title="Kết nối thật được triển khai cùng provider adapter">Test connection</button>
+            </div>
+        </section>
+
+        <section class="panel settings-card">
+            <div class="settings-title">
+                <span class="provider-logo polygon-logo">P</span>
+                <div><h2>Polygon</h2><p>Codeforces Polygon API</p></div>
+                <span class="status-pill @(snapshot.HasPolygonApiKey && snapshot.HasPolygonApiSecret ? "success" : "neutral")">
+                    @(snapshot.HasPolygonApiKey && snapshot.HasPolygonApiSecret ? "Đã lưu credential" : "Chưa cấu hình")
+                </span>
+            </div>
+            <label for="polygon-key">API key</label>
+            <input id="polygon-key" type="password" class="form-control" autocomplete="new-password"
+                   placeholder="@(snapshot.HasPolygonApiKey ? snapshot.PolygonApiKeyMasked : "Nhập API key")" @bind="polygonApiKey" />
+            <div class="form-check clear-check">
+                <input id="clear-polygon-key" class="form-check-input" type="checkbox" @bind="clearPolygonApiKey" />
+                <label class="form-check-label" for="clear-polygon-key">Xóa API key đã lưu</label>
+            </div>
+            <label for="polygon-secret">API secret</label>
+            <input id="polygon-secret" type="password" class="form-control" autocomplete="new-password"
+                   placeholder="@(snapshot.HasPolygonApiSecret ? snapshot.PolygonApiSecretMasked : "Nhập API secret")" @bind="polygonApiSecret" />
+            <div class="form-check clear-check">
+                <input id="clear-polygon-secret" class="form-check-input" type="checkbox" @bind="clearPolygonApiSecret" />
+                <label class="form-check-label" for="clear-polygon-secret">Xóa API secret đã lưu</label>
+            </div>
+            <div class="button-row">
+                <button class="btn btn-secondary" disabled title="Kết nối Polygon được triển khai ở phase 2">Test connection</button>
+            </div>
+        </section>
+
+        <section class="panel settings-card toolchain-card">
+            <div class="settings-title">
+                <span class="provider-logo toolchain-logo">C++</span>
+                <div><h2>Local toolchain</h2><p>GNU C++17 · bundled</p></div>
+                <span class="status-pill warning">Chưa xác minh</span>
+            </div>
+            <dl class="status-list">
+                <div><dt>Compiler</dt><dd>Chờ toolchain bundle</dd></div>
+                <div><dt>GNU C++17</dt><dd>Chưa kiểm tra</dd></div>
+                <div><dt>testlib.h</dt><dd>Chưa kiểm tra</dd></div>
+                <div><dt>Checker source</dt><dd>Chưa kiểm tra</dd></div>
+            </dl>
+            <div class="button-row">
+                <button class="btn btn-secondary" disabled title="Toolchain bootstrap được triển khai ở phase Code">Verify toolchain</button>
+                <button class="btn btn-secondary" disabled title="Toolchain bootstrap được triển khai ở phase Code">Repair toolchain</button>
+            </div>
+            <p class="security-note">Ứng dụng sẽ không chạy code đính kèm. Code trong editor chỉ chạy sau cảnh báo rõ ràng.</p>
+        </section>
+    </div>
+}
+
+@code {
+    private SettingsSnapshot snapshot = new(false, false, false, false, "", "", "", "", "", "");
+    private string? openAiApiKey;
+    private string? geminiApiKey;
+    private string? polygonApiKey;
+    private string? polygonApiSecret;
+    private string openAiDefaultModel = string.Empty;
+    private string geminiDefaultModel = string.Empty;
+    private bool clearOpenAiApiKey;
+    private bool clearGeminiApiKey;
+    private bool clearPolygonApiKey;
+    private bool clearPolygonApiSecret;
+    private bool isLoading = true;
+    private bool isBusy;
+    private bool saveSucceeded;
+    private string? statusMessage;
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        isLoading = true;
+        try
+        {
+            snapshot = await SettingsService.LoadAsync();
+            openAiDefaultModel = snapshot.OpenAiDefaultModel;
+            geminiDefaultModel = snapshot.GeminiDefaultModel;
+        }
+        catch (Exception)
+        {
+            statusMessage = "Không thể đọc cài đặt đã mã hóa. Hãy kiểm tra quyền truy cập thư mục data.";
+            saveSucceeded = false;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        isBusy = true;
+        statusMessage = null;
+        try
+        {
+            await SettingsService.SaveAsync(new(
+                openAiApiKey,
+                clearOpenAiApiKey,
+                geminiApiKey,
+                clearGeminiApiKey,
+                polygonApiKey,
+                clearPolygonApiKey,
+                polygonApiSecret,
+                clearPolygonApiSecret,
+                openAiDefaultModel,
+                geminiDefaultModel));
+            saveSucceeded = true;
+            statusMessage = "Đã lưu cài đặt. Credential được mã hóa bằng DPAPI CurrentUser.";
+            ResetSecretInputs();
+            snapshot = await SettingsService.LoadAsync();
+        }
+        catch (Exception)
+        {
+            saveSucceeded = false;
+            statusMessage = "Không thể lưu cài đặt. Credential cũ vẫn được giữ nguyên.";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ResetSecretInputs()
+    {
+        openAiApiKey = null;
+        geminiApiKey = null;
+        polygonApiKey = null;
+        polygonApiSecret = null;
+        clearOpenAiApiKey = false;
+        clearGeminiApiKey = false;
+        clearPolygonApiKey = false;
+        clearPolygonApiSecret = false;
+    }
+}

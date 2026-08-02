@@ -1,0 +1,154 @@
+@page "/projects/{ProjectId:guid}/step/{Step:int}"
+@inject IProjectService ProjectService
+@inject NavigationManager Navigation
+
+<PageTitle>@(project?.InternalName ?? "Dự án") · Polygon AI Builder</PageTitle>
+
+@if (isLoading)
+{
+    <div class="loading-card"><span class="spinner-border spinner-border-sm"></span> Đang mở dự án…</div>
+}
+else if (project is null)
+{
+    <section class="panel empty-state">
+        <h1>Không tìm thấy dự án</h1>
+        <p>Dự án có thể đã bị xóa hoặc địa chỉ không hợp lệ.</p>
+        <a class="btn btn-primary" href="/">Về dashboard</a>
+    </section>
+}
+else
+{
+    <header class="wizard-title-row">
+        <div>
+            <a class="back-link" href="/">← Tất cả dự án</a>
+            <h1>@project.InternalName</h1>
+        </div>
+        <div class="autosave-indicator"><span class="status-dot"></span> Đã lưu local</div>
+    </header>
+
+    <nav class="wizard-progress panel" aria-label="Tiến trình tạo problem">
+        @for (var index = 1; index <= Steps.Length; index++)
+        {
+            var captured = index;
+            <button class="wizard-step @(captured == Step ? "active" : "") @(captured < Step ? "complete" : "")"
+                    @onclick="() => NavigateToStepAsync(captured)" aria-current="@(captured == Step ? "step" : null)">
+                <span>@(captured < Step ? "✓" : captured)</span>
+                <small>@Steps[captured - 1]</small>
+            </button>
+        }
+    </nav>
+
+    <section class="wizard-content panel">
+        <div class="step-intro">
+            <span class="step-kicker">Bước @Step / 5</span>
+            <h2>@Steps[Step - 1]</h2>
+            <p>@GetStepDescription(Step)</p>
+        </div>
+
+        @if (Step == 1)
+        {
+            <div class="general-info-grid">
+                <label>
+                    <span>Polygon internal problem name</span>
+                    <input class="form-control" value="@project.InternalName" readonly />
+                </label>
+                <label>
+                    <span>Input file</span>
+                    <input class="form-control" value="@project.InputFile" readonly />
+                </label>
+                <label>
+                    <span>Output file</span>
+                    <input class="form-control" value="@project.OutputFile" readonly />
+                </label>
+                <label>
+                    <span>Time limit</span>
+                    <div class="input-suffix"><input class="form-control" value="@project.TimeLimitMs" readonly /><span>ms</span></div>
+                    <small>250–15.000 ms, chia hết cho 50</small>
+                </label>
+                <label>
+                    <span>Memory limit</span>
+                    <div class="input-suffix"><input class="form-control" value="@project.MemoryLimitMb" readonly /><span>MB</span></div>
+                    <small>4–1.024 MB</small>
+                </label>
+            </div>
+            <div class="notice notice-info">Foundation đã lưu các giá trị mặc định. Duplicate-name check có chữ ký Polygon sẽ được nối vào nút Tiếp theo ở phase 2; không có problem remote nào được tạo tại đây.</div>
+        }
+        else
+        {
+            <div class="phase-placeholder">
+                <span aria-hidden="true">◇</span>
+                <h3>@GetPlaceholderTitle(Step)</h3>
+                <p>Shell điều hướng và trạng thái dự án đã sẵn sàng; nội dung chức năng được triển khai ở phase tương ứng trong plan.</p>
+            </div>
+        }
+    </section>
+
+    <footer class="wizard-footer">
+        <button class="btn btn-ghost" @onclick="PreviousAsync" disabled="@(Step == 1 || isNavigating)">← Quay lại</button>
+        <span>Bước hiện tại được lưu để mở lại đúng vị trí.</span>
+        <button class="btn btn-primary app-primary" @onclick="NextAsync" disabled="@(Step == 5 || isNavigating)">Tiếp theo →</button>
+    </footer>
+}
+
+@code {
+    [Parameter] public Guid ProjectId { get; set; }
+    [Parameter] public int Step { get; set; }
+
+    private static readonly string[] Steps = ["General Info", "AI Workspace", "Statement", "Code", "Tests & Sync"];
+    private ProjectDetails? project;
+    private bool isLoading = true;
+    private bool isNavigating;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Step is < 1 or > 5)
+        {
+            Navigation.NavigateTo($"/projects/{ProjectId}/step/1", replace: true);
+            return;
+        }
+
+        isLoading = true;
+        project = await ProjectService.GetAsync(ProjectId);
+        if (project is not null && project.CurrentScreen != Step)
+        {
+            await ProjectService.SetCurrentScreenAsync(ProjectId, Step);
+            project = project with { CurrentScreen = Step };
+        }
+
+        isLoading = false;
+    }
+
+    private Task PreviousAsync() => NavigateToStepAsync(Step - 1);
+    private Task NextAsync() => NavigateToStepAsync(Step + 1);
+
+    private async Task NavigateToStepAsync(int target)
+    {
+        if (target is < 1 or > 5 || target == Step)
+        {
+            return;
+        }
+
+        isNavigating = true;
+        await ProjectService.SetCurrentScreenAsync(ProjectId, target);
+        Navigation.NavigateTo($"/projects/{ProjectId}/step/{target}");
+    }
+
+    private static string GetStepDescription(int step) => step switch
+    {
+        1 => "Cấu hình năm trường thông tin chung trước khi kiểm tra tên trên Polygon.",
+        2 => "Trao đổi với OpenAI hoặc Gemini trong một conversation duy nhất của dự án.",
+        3 => "Chỉnh sửa đúng năm trường statement và xem preview Polygon-compatible LaTeX.",
+        4 => "Tạo, chỉnh sửa và compile solution.cpp cùng generate.cpp bằng GNU C++17.",
+        5 => "Kiểm tra checker, script, Sample 1 và chủ động đồng bộ lên Polygon.",
+        _ => string.Empty,
+    };
+
+    private static string GetPlaceholderTitle(int step) => step switch
+    {
+        2 => "AI workspace đang được nối provider",
+        3 => "Statement editor đang được chuẩn bị",
+        4 => "Code workspace đang được chuẩn bị",
+        5 => "Tests & Sync đang được chuẩn bị",
+        _ => "Đang chuẩn bị",
+    };
+}

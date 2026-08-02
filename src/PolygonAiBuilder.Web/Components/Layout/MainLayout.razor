@@ -1,0 +1,27 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="local-indicator" title="Ứng dụng chỉ lắng nghe trên máy này">
+                <span class="status-dot"></span>
+                Local · 127.0.0.1
+            </div>
+            <a class="top-link" href="settings">Cài đặt</a>
+        </div>
+
+        <article class="content">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Đã xảy ra lỗi không mong muốn.
+    <a href="." class="reload">Tải lại</a>
+    <span class="dismiss">🗙</span>
+</div>

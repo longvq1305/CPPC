@@ -1,0 +1,15 @@
+.page { min-height: 100vh; display: flex; background: var(--app-bg); }
+main { min-width: 0; flex: 1; }
+.sidebar { width: 250px; flex: 0 0 250px; background: #07111f; border-right: 1px solid #18263a; }
+.top-row { height: 64px; padding-inline: 2rem !important; display: flex; align-items: center; justify-content: flex-end; gap: 1.5rem; position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--app-bg) 90%, transparent); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border); }
+.local-indicator { color: var(--muted); font-size: .82rem; display: inline-flex; align-items: center; gap: .55rem; }
+.status-dot { width: 8px; height: 8px; border-radius: 999px; background: #32d583; box-shadow: 0 0 0 4px rgb(50 213 131 / .12); }
+.top-link { color: var(--text); text-decoration: none; font-weight: 650; font-size: .9rem; }
+.content { max-width: 1480px; margin: 0 auto; padding: 2.3rem 2.5rem 4rem; }
+
+@media (max-width: 840px) {
+    .page { display: block; }
+    .sidebar { width: 100%; }
+    .top-row { position: static; padding-inline: 1rem !important; }
+    .content { padding: 1.5rem 1rem 3rem; }
+}

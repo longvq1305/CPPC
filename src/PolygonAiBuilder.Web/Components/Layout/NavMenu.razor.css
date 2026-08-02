@@ -1,0 +1,25 @@
+.brand-wrap { height: 92px; display: flex; align-items: center; padding: 0 1.25rem; border-bottom: 1px solid #18263a; }
+.brand { display: inline-flex; align-items: center; gap: .8rem; color: #f8fafc; text-decoration: none; }
+.brand-mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; color: #06101c; background: linear-gradient(135deg, #6ee7f2, #8b5cf6); font-weight: 900; box-shadow: 0 8px 22px rgb(110 231 242 / .18); }
+.brand strong, .brand small { display: block; line-height: 1.1; }
+.brand strong { font-size: .98rem; letter-spacing: .01em; }
+.brand small { color: #8da1ba; font-size: .72rem; margin-top: .25rem; text-transform: uppercase; letter-spacing: .14em; }
+.navbar-toggler { appearance: none; display: none; }
+.nav-scrollable { padding: 1.2rem .75rem; min-height: calc(100vh - 190px); }
+.nav-label { padding: .5rem .75rem .65rem; color: #60748e; font-size: .66rem; font-weight: 800; text-transform: uppercase; letter-spacing: .14em; }
+.nav-item { margin-bottom: .25rem; }
+.nav-link { display: flex; align-items: center; gap: .75rem; min-height: 44px; padding: .65rem .8rem; border-radius: 10px; color: #9aacc1; font-weight: 600; font-size: .88rem; }
+.nav-link:hover { color: #f8fafc; background: #0f1d2f; }
+.nav-link.active { color: #e8fbff; background: linear-gradient(90deg, rgb(55 194 214 / .17), rgb(139 92 246 / .08)); box-shadow: inset 3px 0 #52d3e3; }
+.nav-icon { display: grid; place-items: center; width: 22px; color: #6ed9e7; font-size: 1rem; }
+.sidebar-foot { padding: 1rem 1.25rem 1.4rem; display: grid; gap: .55rem; color: #667b95; }
+.sidebar-foot small { font-size: .68rem; }
+.version-chip { width: fit-content; border: 1px solid #263a53; border-radius: 999px; padding: .3rem .55rem; color: #8ea3bc; font-size: .66rem; }
+
+@media (max-width: 840px) {
+    .brand-wrap { height: 68px; }
+    .navbar-toggler { display: block; position: absolute; right: 1rem; top: 1rem; width: 38px; height: 34px; border: 1px solid #263a53; border-radius: 8px; }
+    .navbar-toggler::after { content: '☰'; color: #fff; display: grid; place-items: center; height: 100%; }
+    .nav-scrollable, .sidebar-foot { display: none; }
+    .navbar-toggler:checked ~ .nav-scrollable { display: block; min-height: auto; }
+}

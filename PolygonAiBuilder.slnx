@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/PolygonAiBuilder.Application/PolygonAiBuilder.Application.csproj" />
+    <Project Path="src/PolygonAiBuilder.Contracts/PolygonAiBuilder.Contracts.csproj" />
+    <Project Path="src/PolygonAiBuilder.Domain/PolygonAiBuilder.Domain.csproj" />
+    <Project Path="src/PolygonAiBuilder.Infrastructure/PolygonAiBuilder.Infrastructure.csproj" />
+    <Project Path="src/PolygonAiBuilder.Integrations/PolygonAiBuilder.Integrations.csproj" />
+    <Project Path="src/PolygonAiBuilder.Web/PolygonAiBuilder.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PolygonAiBuilder.E2ETests/PolygonAiBuilder.E2ETests.csproj" />
+    <Project Path="tests/PolygonAiBuilder.IntegrationTests/PolygonAiBuilder.IntegrationTests.csproj" />
+    <Project Path="tests/PolygonAiBuilder.UnitTests/PolygonAiBuilder.UnitTests.csproj" />
+  </Folder>
+</Solution>

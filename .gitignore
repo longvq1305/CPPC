@@ -1,0 +1,39 @@
+# Build output
+**/bin/
+**/obj/
+.vs/
+.vscode/
+TestResults/
+artifacts/
+dist/
+playwright-report/
+test-results/
+
+# Local runtime state
+data/*
+!data/.gitkeep
+projects/*
+!projects/.gitkeep
+logs/*
+!logs/.gitkeep
+**/secrets.local.json
+**/secrets.local.json.tmp
+*.db
+*.db-shm
+*.db-wal
+
+# Acquired toolchain binaries
+toolchain/mingw64/
+toolchain/downloads/
+
+# User/IDE state
+*.user
+*.suo
+*.rsuser
+*.userosscache
+*.sln.docstates
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store

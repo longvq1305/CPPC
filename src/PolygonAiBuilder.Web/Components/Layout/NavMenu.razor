@@ -1,0 +1,39 @@
+<div class="brand-wrap">
+    <a class="brand" href="">
+        <span class="brand-mark">P</span>
+        <span>
+            <strong>Polygon AI</strong>
+            <small>Builder</small>
+        </span>
+    </a>
+</div>
+
+<input type="checkbox" title="Mở menu điều hướng" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="nav flex-column">
+        <div class="nav-label">Workspace</div>
+        <div class="nav-item">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="nav-icon" aria-hidden="true">⌂</span> Dự án
+            </NavLink>
+        </div>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="settings">
+                <span class="nav-icon" aria-hidden="true">⚙</span> Cài đặt
+            </NavLink>
+        </div>
+
+        <div class="nav-item">
+            <NavLink class="nav-link" href="diagnostics">
+                <span class="nav-icon" aria-hidden="true">◫</span> Diagnostics
+            </NavLink>
+        </div>
+    </nav>
+</div>
+
+<div class="sidebar-foot">
+    <span class="version-chip">v0.1 · Foundation</span>
+    <small>Dữ liệu được lưu trên máy này</small>
+</div>
