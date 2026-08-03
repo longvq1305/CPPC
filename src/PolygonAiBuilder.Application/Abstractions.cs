@@ -375,6 +375,15 @@ public interface IPolygonSyncService
         CancellationToken cancellationToken = default);
 }
 
+public interface IAutomatedWorkflowService
+{
+    Task<bool> IsEnabledAsync(Guid projectId, CancellationToken cancellationToken = default);
+    Task SetEnabledAsync(Guid projectId, bool enabled, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AutomatedWorkflowProgress> RunAsync(
+        Guid projectId,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IPolygonClient
 {
     Task<IReadOnlyList<PolygonProblem>> ListProblemsAsync(

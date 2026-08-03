@@ -132,7 +132,7 @@
                 <div><span class="eyebrow">Explicit remote action</span><h3>Đồng bộ lên Polygon</h3></div>
                 <span class="status-pill @SyncStatusClass">@SyncStatusText</span>
             </div>
-            <p>Nút sync sẽ chỉ được bật sau khi Self-Audit PASSED. Không có auto-sync và ứng dụng không tải Polygon package về máy.</p>
+            <p>Ở chế độ từng bước, nút sync chỉ được bật sau khi Self-Audit PASSED. Nếu đã bật tự động ở Bước 2, nút “Chốt đề &amp; tự động hoàn tất” là xác nhận ghi remote và pipeline sẽ chạy qua phần này. Ứng dụng không tải Polygon package về máy.</p>
             @if (lastSyncProgress is not null)
             {
                 <div class="sync-progress-line @(lastSyncProgress.Status == SyncOperationStatus.Failed ? "failed" : "")">
@@ -178,6 +178,24 @@
                 </details>
             }
         </section>
+
+        @if (syncSnapshot?.ProblemId is not null)
+        {
+            <section class="manage-access-card" aria-labelledby="manage-access-title">
+                <div class="pane-heading">
+                    <div><span class="eyebrow">Polygon handoff</span><h3 id="manage-access-title">Manage Access</h3></div>
+                    <span class="status-pill warning">Cần thao tác trên Polygon</span>
+                </div>
+                <p>Polygon API chính thức không cung cấp thao tác quản lý quyền truy cập. Sau khi package READY, mở problem rồi vào <strong>Manage Access</strong> và thêm đúng hai đối tượng sau; ứng dụng không báo giả rằng quyền đã được cấp.</p>
+                <div class="access-recipient-list" aria-label="Danh sách cần chia sẻ">
+                    <code>codeforces</code>
+                    <code>@@gia-su-yb</code>
+                </div>
+                <a class="btn btn-secondary" href="@PolygonProblemUrl" target="_blank" rel="noopener noreferrer">
+                    Mở problem @syncSnapshot.ProblemId trên Polygon ↗
+                </a>
+            </section>
+        }
 
         @if (showSyncReview)
         {
@@ -235,6 +253,7 @@
     private bool isSyncing;
     private bool showSyncReview;
     private Guid loadedProjectId;
+    private string PolygonProblemUrl => $"https://polygon.codeforces.com/p/{syncSnapshot?.ProblemId}";
 
     protected override async Task OnParametersSetAsync()
     {

@@ -16,8 +16,10 @@ Version 1.0 implements the full five-step workflow:
    Polygon sync, statement render/caution checks, commit, and verified standard
    package polling.
 
-The app never auto-syncs. It does not add validators, brute-force/wrong solutions,
-run all 100 tests locally, or download Polygon packages.
+Remote writes are always opt-in. The normal wizard uses an explicit sync review;
+the optional automation toggle still requires the user to press **Chốt đề & tự động
+hoàn tất** before it may write to Polygon. The app does not add validators,
+brute-force/wrong solutions, run all 100 tests locally, or download Polygon packages.
 
 ## Prerequisites
 
@@ -108,6 +110,20 @@ mở dự án vừa tạo.
   **Cập nhật statement**. Kiểm tra phần thay đổi và dùng **Undo** khi cần.
 - Mỗi dự án có một conversation riêng; nội dung chat và statement được lưu local.
 
+##### Chế độ tự động (tùy chọn)
+
+- Bật **Tự động hoàn tất sau khi chốt đề** nếu muốn bỏ qua việc nhấn qua từng bước.
+  Công tắc được lưu riêng cho dự án và mặc định tắt; chỉ bật công tắc chưa chạy gì.
+- Kiểm tra statement đã có đủ `Title`, `Legend`, `Input`, `Output`, sau đó nhấn
+  **Chốt đề & tự động hoàn tất**. Đây là xác nhận rõ ràng cho phép pipeline ghi lên
+  Polygon.
+- Pipeline lần lượt đặt 100 test × 1 điểm, sinh `solution.cpp` và `generate.cpp`, tự
+  chọn `ncmp.cpp`/`wcmp.cpp`, compile và auto-fix, tạo Sample 1 từ `test_id=1`, chạy
+  Self-Audit, upload, commit và build standard package có `verify=true`.
+- Nếu một phase lỗi, pipeline dừng và hiển thị phase cùng thông báo cụ thể. Sửa lỗi
+  rồi nhấn lại nút chốt; các trạng thái sync đã thành công được dùng để resume, không
+  tạo problem thứ hai.
+
 #### Bước 3 — Statement
 
 - Chỉnh đúng năm trường `Title`, `Legend`, `Input`, `Output`, `Note` và xem preview
@@ -136,9 +152,9 @@ mở dự án vừa tạo.
    Self-Audit sẽ cảnh báo khác biệt với kết quả chạy local.
 3. Nhấn **Chạy Self-Audit** và xử lý toàn bộ lỗi chặn cho đến khi trạng thái là
    `PASSED`.
-4. Nhấn **Đồng bộ lên Polygon**, đọc lại bản tóm tắt rồi nhấn
-   **Xác nhận đồng bộ**. Đây là thao tác duy nhất tạo/ghi problem trên Polygon;
-   ứng dụng không tự sync.
+4. Ở chế độ từng bước, nhấn **Đồng bộ lên Polygon**, đọc lại bản tóm tắt rồi nhấn
+   **Xác nhận đồng bộ**. Ở chế độ tự động, xác nhận tương ứng là nút
+   **Chốt đề & tự động hoàn tất** tại Bước 2.
 5. Giữ ứng dụng chạy trong lúc upload, render statement, kiểm tra cautions, commit
    và build standard package. Ứng dụng chỉ hiển thị trạng thái package và không tải
    package ZIP về máy.
@@ -146,6 +162,12 @@ mở dự án vừa tạo.
 Nếu sync dừng giữa chừng sau khi Polygon đã tạo problem, ID từ xa được giữ lại.
 Sau khi sửa nguyên nhân, dùng **Tiếp tục đồng bộ** để resume thay vì tạo một
 problem thứ hai.
+
+Sau khi Polygon đã có problem ID, Bước 5 hiển thị thẻ **Manage Access** với hai
+đối tượng cần chia sẻ: `codeforces` và `@gia-su-yb`. Polygon API chính thức không có
+endpoint quản lý quyền truy cập, vì vậy ứng dụng mở đúng problem để bạn vào
+**Manage Access**, chọn mức quyền mong muốn và thêm thủ công hai đối tượng này;
+ứng dụng không dùng endpoint không công bố và không báo thành công giả.
 
 ### 4. Mở lại dự án và xử lý lỗi thường gặp
 

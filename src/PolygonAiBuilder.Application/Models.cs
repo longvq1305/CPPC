@@ -170,6 +170,25 @@ public sealed record PolygonSyncProgress(
     PolygonPackage? Package = null,
     PolygonCautions? Cautions = null);
 
+public enum AutomatedWorkflowStage
+{
+    StatementValidated,
+    TestsConfigured,
+    CodeGenerated,
+    SolutionCompiled,
+    GeneratorCompiled,
+    SampleGenerated,
+    PolygonSync,
+    Completed,
+}
+
+public sealed record AutomatedWorkflowProgress(
+    AutomatedWorkflowStage Stage,
+    SyncOperationStatus Status,
+    string Message,
+    PolygonSyncSnapshot? SyncSnapshot = null,
+    PolygonPackage? Package = null);
+
 public sealed record ConnectionTestResult(bool Succeeded, string Message, TimeSpan Duration);
 
 public sealed record ConnectionDiagnostic(

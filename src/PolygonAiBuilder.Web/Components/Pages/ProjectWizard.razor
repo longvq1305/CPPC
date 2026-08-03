@@ -1,6 +1,7 @@
 @page "/projects/{ProjectId:guid}/step/{Step:int}"
 @inject IProjectService ProjectService
 @inject IGeneralInfoService GeneralInfoService
+@inject IAutomatedWorkflowService AutomatedWorkflowService
 @inject NavigationManager Navigation
 @implements IDisposable
 
@@ -122,6 +123,37 @@ else
         }
         else if (Step == 2)
         {
+            <section class="automation-toggle-card" aria-labelledby="automation-toggle-title">
+                <div>
+                    <span class="eyebrow">Chế độ opt-in</span>
+                    <h3 id="automation-toggle-title">Tự động hoàn tất sau khi chốt đề</h3>
+                    <p>Sinh code, compile và auto-fix, đặt checker, tạo 100 test × 1 điểm, lấy test 1 làm sample, Self-Audit, sync, commit và build standard package.</p>
+                    <small>Bật công tắc chưa chạy ngay. Nút “Chốt đề & tự động hoàn tất” là xác nhận rõ ràng cho phép ghi lên Polygon.</small>
+                </div>
+                <label class="automation-switch" for="automation-enabled">
+                    <input id="automation-enabled" type="checkbox" role="switch"
+                           @bind="automationEnabled" @bind:after="SaveAutomationPreferenceAsync"
+                           disabled="@isNavigating" />
+                    <span aria-hidden="true"></span>
+                    <strong>@(automationEnabled ? "Đang bật" : "Đang tắt")</strong>
+                </label>
+            </section>
+            @if (!string.IsNullOrWhiteSpace(automationNotice))
+            {
+                <div class="notice @automationNoticeClass" role="status">@automationNotice</div>
+            }
+            @if (automationProgress.Count > 0)
+            {
+                <ol class="automation-progress" aria-label="Tiến trình tự động">
+                    @foreach (var item in automationProgress)
+                    {
+                        <li class="@AutomationStatusClass(item.Status)">
+                            <span>@AutomationStatusIcon(item.Status)</span>
+                            <div><strong>@AutomationStageLabel(item.Stage)</strong><small>@item.Message</small></div>
+                        </li>
+                    }
+                </ol>
+            }
             <AiWorkspace ProjectId="ProjectId" />
         }
         else if (Step == 3)
@@ -157,7 +189,9 @@ else
     <footer class="wizard-footer">
         <button class="btn btn-ghost" @onclick="PreviousAsync" disabled="@(Step == 1 || isNavigating)">← Quay lại</button>
         <span>Bước hiện tại được lưu để mở lại đúng vị trí.</span>
-        <button class="btn btn-primary app-primary" @onclick="NextAsync" disabled="@(Step == 5 || isNavigating)">Tiếp theo →</button>
+        <button class="btn btn-primary app-primary" @onclick="NextAsync" disabled="@(Step == 5 || isNavigating)">
+            @(Step == 2 && automationEnabled ? "Chốt đề & tự động hoàn tất →" : "Tiếp theo →")
+        </button>
     </footer>
 }
 
@@ -184,6 +218,11 @@ else
     private CodeWorkspace? codeWorkspace;
     private string? statementContinueMessage;
     private string? codeContinueMessage;
+    private bool automationEnabled;
+    private string? automationNotice;
+    private string automationNoticeClass = "notice-info";
+    private List<AutomatedWorkflowProgress> automationProgress = [];
+    private CancellationTokenSource? automationCancellation;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -197,6 +236,7 @@ else
 
         isLoading = true;
         project = await ProjectService.GetAsync(ProjectId);
+        automationEnabled = await AutomatedWorkflowService.IsEnabledAsync(ProjectId);
         if (project is not null)
         {
             internalName = project.InternalName;
@@ -230,10 +270,77 @@ else
     private Task NextAsync() => Step switch
     {
         1 => CheckNameAndContinueAsync(),
+        2 when automationEnabled => RunAutomatedWorkflowAsync(),
         3 => ValidateStatementAndContinueAsync(),
         4 => ValidateCodeAndContinueAsync(),
         _ => NavigateToStepAsync(Step + 1),
     };
+
+    private async Task SaveAutomationPreferenceAsync()
+    {
+        try
+        {
+            await AutomatedWorkflowService.SetEnabledAsync(ProjectId, automationEnabled);
+            automationNotice = automationEnabled
+                ? "Đã bật. Khi bạn bấm chốt đề, pipeline sẽ chạy liên tục và chỉ ghi Polygon sau khi Self-Audit PASSED."
+                : "Đã tắt chế độ tự động; wizard tiếp tục hoạt động từng bước như trước.";
+            automationNoticeClass = automationEnabled ? "notice-info" : "notice-success";
+        }
+        catch (Exception exception)
+        {
+            automationEnabled = !automationEnabled;
+            automationNotice = $"Không thể lưu công tắc: {exception.Message}";
+            automationNoticeClass = "notice-error";
+        }
+    }
+
+    private async Task RunAutomatedWorkflowAsync()
+    {
+        isNavigating = true;
+        automationProgress = [];
+        automationNotice = "Đang chạy pipeline tự động. Không đóng ứng dụng cho tới khi hoàn tất hoặc báo lỗi.";
+        automationNoticeClass = "notice-info";
+        automationCancellation?.Cancel();
+        automationCancellation?.Dispose();
+        automationCancellation = new CancellationTokenSource();
+        AutomatedWorkflowProgress? last = null;
+        try
+        {
+            await foreach (var progress in AutomatedWorkflowService.RunAsync(
+                               ProjectId,
+                               automationCancellation.Token))
+            {
+                last = progress;
+                automationProgress.Add(progress);
+                automationNotice = progress.Message;
+                automationNoticeClass = progress.Status == SyncOperationStatus.Failed
+                    ? "notice-error"
+                    : progress.Stage == AutomatedWorkflowStage.Completed
+                        ? "notice-success"
+                        : "notice-info";
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (last is { Stage: AutomatedWorkflowStage.Completed, Status: SyncOperationStatus.Succeeded })
+            {
+                Navigation.NavigateTo($"/projects/{ProjectId}/step/5");
+            }
+        }
+        catch (OperationCanceledException) when (automationCancellation.IsCancellationRequested)
+        {
+            automationNotice = "Đã dừng pipeline tự động. Các phase đã hoàn tất vẫn được giữ để tiếp tục.";
+            automationNoticeClass = "notice-error";
+        }
+        catch (Exception exception)
+        {
+            automationNotice = $"Pipeline đã dừng: {exception.Message}";
+            automationNoticeClass = "notice-error";
+        }
+        finally
+        {
+            isNavigating = false;
+        }
+    }
 
     private async Task ValidateCodeAndContinueAsync()
     {
@@ -415,6 +522,8 @@ else
     {
         autosaveCancellation?.Cancel();
         autosaveCancellation?.Dispose();
+        automationCancellation?.Cancel();
+        automationCancellation?.Dispose();
     }
 
     private static string GetStepDescription(int step) => step switch
@@ -425,6 +534,33 @@ else
         4 => "Tạo, chỉnh sửa và compile solution.cpp cùng generate.cpp bằng GNU C++17.",
         5 => "Kiểm tra checker, script, Sample 1 và chủ động đồng bộ lên Polygon.",
         _ => string.Empty,
+    };
+
+    private static string AutomationStatusClass(SyncOperationStatus status) => status switch
+    {
+        SyncOperationStatus.Succeeded => "success",
+        SyncOperationStatus.Failed => "failed",
+        _ => "running",
+    };
+
+    private static string AutomationStatusIcon(SyncOperationStatus status) => status switch
+    {
+        SyncOperationStatus.Succeeded => "✓",
+        SyncOperationStatus.Failed => "!",
+        _ => "…",
+    };
+
+    private static string AutomationStageLabel(AutomatedWorkflowStage stage) => stage switch
+    {
+        AutomatedWorkflowStage.StatementValidated => "Chốt statement",
+        AutomatedWorkflowStage.TestsConfigured => "Cấu hình tests",
+        AutomatedWorkflowStage.CodeGenerated => "Sinh code",
+        AutomatedWorkflowStage.SolutionCompiled => "Compile solution",
+        AutomatedWorkflowStage.GeneratorCompiled => "Compile generator",
+        AutomatedWorkflowStage.SampleGenerated => "Tạo Sample 1",
+        AutomatedWorkflowStage.PolygonSync => "Self-Audit & Polygon",
+        AutomatedWorkflowStage.Completed => "Hoàn tất",
+        _ => stage.ToString(),
     };
 
     private static string GetPlaceholderTitle(int step) => step switch

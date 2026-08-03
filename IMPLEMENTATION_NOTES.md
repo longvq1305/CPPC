@@ -71,3 +71,14 @@
   OpenAI, Google, Polygon key/secret, and signature shapes. Diagnostics stores only
   bounded non-secret connection results; Polygon server offset remains “unknown”
   because the current official Polygon API does not expose server time on success.
+
+## 2026-08-03
+
+- The user's opt-in automation request is newer than the original no-auto-sync
+  product guardrail. The per-project toggle defaults off and does not start work by
+  itself; pressing **Chốt đề & tự động hoàn tất** is treated as the explicit remote
+  action. The same Self-Audit gate and resumable Polygon sync service remain in use.
+- Polygon's documented API does not expose collaborator/access management. The app
+  therefore provides an honest post-sync handoff for `codeforces` and `@gia-su-yb`
+  instead of calling an undocumented endpoint, scraping a browser session, guessing
+  an access level, or reporting a fake success.

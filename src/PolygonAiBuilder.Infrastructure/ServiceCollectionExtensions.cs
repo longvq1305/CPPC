@@ -59,6 +59,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITestConfigurationService, TestConfigurationService>();
         services.AddScoped<ISelfAuditService, SelfAuditService>();
         services.AddScoped<IPolygonSyncService, PolygonSyncService>();
+        services.AddScoped<IAutomatedWorkflowService, AutomatedWorkflowService>();
         return services;
     }
 
